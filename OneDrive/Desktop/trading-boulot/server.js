@@ -6,7 +6,7 @@ const path    = require('path');
 const fs      = require('fs');
 const os      = require('os');
 const { spawn, execSync } = require('child_process');
-const PORT    = Number(process.env.PORT || 4001); // boulot = 4001 par défaut (adel = 4000)
+const PORT    = Number(process.env.PORT || 4001); // boulot = 4001 (adel/auto = 4000)
 if (!process.env.BROKER_MODE) process.env.BROKER_MODE = 'live';
 if (!process.env.SAFE_MODE) process.env.SAFE_MODE = '0';
 const SAFE_MODE = process.env.SAFE_MODE !== '0';
@@ -14691,4 +14691,4 @@ setInterval(async () => {
     try { await pushCoachEvent(sessionId); } catch(_) {}
   }
 }, 4000);
-
+
