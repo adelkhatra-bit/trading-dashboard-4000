@@ -2169,6 +2169,16 @@ app.get('/extension/data', (_req, res) => {
   let _src = 'tradingview';
   let _connected = tvRuntime?.connected;
 
+  // Override _ts avec le timestamp keepalive-fresh (tvDataStore.updatedAt) pour éviter STALE
+  // tvRuntime.timestamp = robotV12.receivedAt (ancien tick Pine Script — peut être vieux de heures)
+  // tvDataStore[sym].updatedAt = Date.now() rafraîchi toutes les 20s par keepalive → toujours frais
+  if (_bridgeKeepaliveEnabled && _bridgeLiveAt && _sym) {
+    const _kaUpd = tvDataStore[_sym]?.updatedAt || tvDataStore[String(_sym).toUpperCase()]?.updatedAt;
+    if (_kaUpd) {
+      _ts = typeof _kaUpd === 'number' ? new Date(_kaUpd).toISOString() : _kaUpd;
+    }
+  }
+
   if ((!_connected || !_px) && _bridgeKeepaliveEnabled) {
     const _ka = Object.values(tvDataStore).sort((a,b)=>{
       const ta = typeof a.updatedAt==='number'?a.updatedAt:new Date(a.updatedAt||0).getTime();
