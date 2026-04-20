@@ -407,6 +407,8 @@ function _bridgeKeepaliveTick() {
     tvResolution: cached.tvResolution || _tfToTvResolution(cached.timeframe) || null,
     updatedAt: new Date().toISOString(),
     source: 'keepalive-cache',
+    // Inclure bridgeData cached → met à jour toutes les cartes TF même sans tick Pine
+    bridgeData: cached.bridgeData || null,
     keepalive: true
   });
 }
@@ -2022,8 +2024,10 @@ app.get('/extension/sync', (_req, res) => {
         resolvedBy: resolvedCtx.active.resolvedBy || 'none',
         tvSymbol: _getWidgetSymbol(null, _sym),
         tvResolution: _tfToTvResolution(_tf),
-        // Keepalive: si pas d'updatedAt réel, utiliser Date.now() pour éviter STALE au boot
-        updatedAt: resolvedCtx.active.updatedAt || (_bridgeKeepaliveEnabled && _bridgeLiveAt ? new Date().toISOString() : null),
+        // Keepalive actif = toujours envoyer timestamp frais (évite STALE initial-sync)
+        updatedAt: (_bridgeKeepaliveEnabled && _bridgeLiveAt && (Date.now() - _bridgeLiveAt < 30000))
+          ? new Date().toISOString()
+          : (resolvedCtx.active.updatedAt || null),
       };
     })(),
     systemStatus: _bridgeKeepaliveEnabled && _bridgeLiveAt
