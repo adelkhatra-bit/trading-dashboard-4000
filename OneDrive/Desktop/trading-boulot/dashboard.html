@@ -1220,8 +1220,12 @@ function updateStatusBar(sym, tf, price, source, updatedAt, connected) {
   const nsym = _normSym(sym);
   const ntf  = _normTf(tf);
   const tsMs = _parseTsMs(updatedAt);
-  S.bridgeUpdatedAtMs = tsMs;
-  S.bridgeAgeMs = tsMs ? (Date.now() - tsMs) : Infinity;
+  // Ne mettre à jour bridgeUpdatedAtMs que si le nouveau timestamp est plus récent
+  // (évite que refreshMarket/extension-data écrase le timestamp frais du keepalive SSE)
+  if (!S.bridgeUpdatedAtMs || !tsMs || tsMs > S.bridgeUpdatedAtMs) {
+    S.bridgeUpdatedAtMs = tsMs;
+  }
+  S.bridgeAgeMs = S.bridgeUpdatedAtMs ? (Date.now() - S.bridgeUpdatedAtMs) : Infinity;
 
   if (nsym) { S.symbol = nsym; setText('statusSymbol', nsym); }
   else { S.symbol = null; setText('statusSymbol', '--'); }

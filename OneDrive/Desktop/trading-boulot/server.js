@@ -5884,12 +5884,20 @@ app.get('/bridge/robot-v12/status', (req, res) => {
 app.get('/bridge/health', (req, res) => {
   const now = Date.now();
 
+  // Normaliser updatedAt → ms (peut être string ISO ou number selon la source)
+  const _toMs = v => {
+    if (!v) return 0;
+    if (typeof v === 'number') return v;
+    const n = new Date(v).getTime();
+    return isNaN(n) ? 0 : n;
+  };
+
   // Maillon 1 : TradingView → tvDataStore
   const tvEntries = Object.entries(tvDataStore);
   const latestTv = tvEntries.length > 0
-    ? tvEntries.reduce((a, b) => (a[1].updatedAt || 0) > (b[1].updatedAt || 0) ? a : b)
+    ? tvEntries.reduce((a, b) => _toMs(a[1].updatedAt) > _toMs(b[1].updatedAt) ? a : b)
     : null;
-  const tvAgeSeconds = latestTv ? Math.round((now - (latestTv[1].updatedAt || 0)) / 1000) : null;
+  const tvAgeSeconds = latestTv ? Math.round((now - _toMs(latestTv[1].updatedAt)) / 1000) : null;
   const tvLive = tvAgeSeconds !== null && tvAgeSeconds < 30;
 
   // Maillon 2 : SSE clients connectés

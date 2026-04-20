@@ -12946,9 +12946,11 @@ async function boot() {
       } else {
         // Bridge OK — nettoyer l'alerte
         if (_alertEl) _alertEl.style.display = 'none';
-        if (_bbEl && _bridgeStaleAlerted) {
+        if (_bbEl) {
+          if (_bridgeStaleAlerted) {
+            speak('TradingView reconnecté. Flux prix rétabli.');
+          }
           _bbEl.textContent = '● TV LIVE'; _bbEl.style.background = 'rgba(34,197,94,.1)'; _bbEl.style.color = '#22c55e';
-          speak('TradingView reconnecté. Flux prix rétabli.');
         }
         _bridgeStaleAlerted = false;
       }
@@ -12962,7 +12964,7 @@ async function boot() {
   setInterval(loadLiveSymbols,    30000);
   setInterval(loadJournalStats,   90000);
   setInterval(refreshServerStats, 60000);
-  setInterval(renderBridgeHealth,  5000);
+  setInterval(renderBridgeHealth,  15000);
   refreshServerStats();
   setInterval(function() {
     if (!state.agentSessionActive) return;
