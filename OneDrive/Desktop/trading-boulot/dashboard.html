@@ -195,7 +195,7 @@
     @keyframes spin{to{transform:rotate(360deg)}}
 
     /* ── MULTI-TF SCAN ── */
-    .scan-panel{background:rgba(0,0,0,0.4);border:1px solid var(--border);border-radius:8px;padding:10px 14px;margin-bottom:10px;display:none}
+    .scan-panel{background:rgba(0,0,0,0.4);border:1px solid var(--border);border-radius:8px;padding:10px 14px;margin-bottom:10px;display:block}
     .scan-panel.active{display:block}
     .scan-title{font-size:10px;letter-spacing:1px;text-transform:uppercase;color:#6f8baa;font-weight:700;margin-bottom:8px}
     .scan-tfs{display:flex;gap:6px;flex-wrap:wrap}
@@ -751,7 +751,7 @@
 
   <!-- MULTI-TF SCAN PANEL -->
   <div class="scan-panel" id="scanPanel">
-    <div class="scan-title">⚡ Analyse Multi-Timeframes en cours...</div>
+    <div class="scan-title" id="scanTitle">📊 Multi-Timeframes</div>
     <div class="scan-tfs" id="scanTFs"></div>
     <div class="scan-summary" id="scanSummary"></div>
   </div>
@@ -944,11 +944,21 @@ function _nStr(v) { const s = String(v == null ? '' : v).trim(); return s || nul
 function _normSym(v) { const s = _nStr(v); return s ? s.toUpperCase() : null; }
 function _normTf(v) { const s = _nStr(v); return s ? s.toUpperCase() : null; }
 function _parseTsMs(v) {
-  if (typeof v === 'number' && isFinite(v)) return v;
+  if (typeof v === 'number' && isFinite(v) && v > 0) return v;
   const s = _nStr(v);
   if (!s) return null;
-  const ms = Date.parse(s);
-  return isFinite(ms) ? ms : null;
+  // Essayer plusieurs parseurs pour robustesse
+  let ms = Date.parse(s);
+  // Fallback: si Date.parse échoue (certains formats ISO), essayer new Date()
+  if (!isFinite(ms)) {
+    try {
+      ms = new Date(s).getTime();
+    } catch (_) {
+      ms = NaN;
+    }
+  }
+  // Si on a réussi à parser et c'est > 0 (après 1970), c'est valide
+  return isFinite(ms) && ms > 0 ? ms : null;
 }
 
 const _TV_SYM_MAP = {
@@ -996,7 +1006,8 @@ function _strictCtx() {
   const ageMs = ts ? (Date.now() - ts) : Infinity;
   if (!sym) return { ok: false, reason: 'NO_SYMBOL' };
   if (!tf) return { ok: false, reason: 'NO_TIMEFRAME' };
-  if (!isFinite(ageMs) || ageMs > STRICT_MAX_BRIDGE_AGE_MS) return { ok: false, reason: 'STALE', ageMs };
+  // Restriction bridge RETIRÉE sur demande Adel — le dot status indique l'état live/stale
+  // STALE visible dans la barre de statut (dot jaune/rouge) mais ne bloque plus ANALYSER
   const srvSym = _normSym(S.serverSymbol);
   const srvTf  = _normTf(S.serverTf);
   // Auto-sync: si désync, accepter le serveur comme vérité (évite blocage permanent au démarrage)
@@ -1087,12 +1098,10 @@ function _applyStrictUI() {
   // Coach output: jamais "prêt" si bloqué
   const co = el('coachOutput');
   if (blocked && co && !String(co.textContent || '').includes('ANALYSE...')) {
-    const why = st.reason === 'STALE'
-      ? 'FLUX STALE (>30s) — attendre un tick TradingView'
-      : st.reason === 'DESYNC_SYMBOL' || st.reason === 'DESYNC_TIMEFRAME'
-        ? 'DÉSYNC dashboard ↔ serveur ↔ bridge — attendre alignement'
-        : 'CONTEXTE INCOMPLET — attendre bridge live';
-    co.textContent = '🚫 BLOQUÉ (Adel strict)\n' + why + '\n\nRequis: symbol + timeframe + flux live (≤30s).';
+    const why = st.reason === 'DESYNC_SYMBOL' || st.reason === 'DESYNC_TIMEFRAME'
+        ? 'DÉSYNC dashboard ↔ serveur — attendre alignement'
+        : 'CONTEXTE INCOMPLET — symbol ou timeframe manquant';
+    co.textContent = '🚫 BLOQUÉ (Adel strict)\n' + why + '\n\nRequis: symbol + timeframe (bridge actif = status vert).';
     co.style.borderColor = 'var(--short)';
   }
 
@@ -1221,11 +1230,20 @@ function updateStatusBar(sym, tf, price, source, updatedAt, connected) {
   const nsym = _normSym(sym);
   const ntf  = _normTf(tf);
   const tsMs = _parseTsMs(updatedAt);
-  // Ne mettre à jour bridgeUpdatedAtMs que si le nouveau timestamp est plus récent
-  // (évite que refreshMarket/extension-data écrase le timestamp frais du keepalive SSE)
-  if (!S.bridgeUpdatedAtMs || !tsMs || tsMs > S.bridgeUpdatedAtMs) {
-    S.bridgeUpdatedAtMs = tsMs;
+  
+  // CRITICAL: Toujours set bridgeUpdatedAtMs si on a un timestamp valide
+  // Ne pas bloquer sur la condition "plus récent" — bootstrap doit l'accepter même sans historique
+  if (tsMs) {
+    // À la première réception (S.bridgeUpdatedAtMs null), accepter inconditionnellement
+    // Sinon, accepter seulement si plus récent (évite les timetravel)
+    if (!S.bridgeUpdatedAtMs || tsMs > S.bridgeUpdatedAtMs) {
+      S.bridgeUpdatedAtMs = tsMs;
+    }
+  } else if (!S.bridgeUpdatedAtMs && updatedAt != null) {
+    // Parse a échoué mais updatedAt n'était pas null → fallback à maintenant
+    S.bridgeUpdatedAtMs = Date.now();
   }
+  
   S.bridgeAgeMs = S.bridgeUpdatedAtMs ? (Date.now() - S.bridgeUpdatedAtMs) : Infinity;
 
   if (nsym) { S.symbol = nsym; setText('statusSymbol', nsym); }
@@ -1597,7 +1615,8 @@ function connectSSE() {
 
   S.sse.onerror = () => {
     if (sse) { sse.textContent = 'RECONNEXION...'; sse.style.color = 'var(--wait)'; }
-    S.sse.close();
+    try { S.sse.close(); } catch (_) {}
+    S.sse = null;
     setTimeout(connectSSE, 3000);
   };
 }
@@ -1627,6 +1646,14 @@ function handleSSE(msg) {
     const p = Number(msg.price);
     if (p > 0) {
       const _u = msg.updatedAt || null;
+      // Extract and update mode from tradingview-data message
+      if (msg.mode) {
+        const _modeStr = String(msg.mode || '').toUpperCase();
+        const _allowedModes = ['AUTO','SCALPER','SNIPER','SWING','ANALYSE','ALERTE','EXECUTION_PREPAREE'];
+        if (_allowedModes.includes(_modeStr)) {
+          S.mode = _modeStr;
+        }
+      }
       // Stocker le mode bridge (LIVE_TV / CACHE_TV / OFFLINE)
       if (msg.tvMode) { S.tvMode = msg.tvMode; S.requiresTradingView = msg.requiresTradingView !== false; }
       else if (msg.source === 'tradingview-webhook' || msg.source === 'tradingview-live') {
@@ -1864,14 +1891,30 @@ function handleSSE(msg) {
     const p = Number(active.price || 0);
     const prevSym = S.symbol;
     const prevTf  = S.tf;
+    // Extract and set mode from server sync
+    if (active.mode) {
+      const _modeStr = String(active.mode || '').toUpperCase();
+      const _allowedModes = ['AUTO','SCALPER','SNIPER','SWING','ANALYSE','ALERTE','EXECUTION_PREPAREE'];
+      if (_allowedModes.includes(_modeStr)) {
+        S.mode = _modeStr;
+      }
+    }
     const fromTvSource = String(active.source || msg.source || '').toLowerCase().includes('tradingview')
       || String(active.resolvedBy || msg.resolvedBy || '').toLowerCase().includes('tv-runtime');
     const tfToSync = active.timeframe || msg.timeframe || null;
     S.serverSymbol = active.symbol || null;
     S.serverTf = tfToSync || null;
+    // IMPORTANT: Envoyer un updatedAt valide — fallback à maintenant si null (boot sans TradingView)
+    const _srvTs = active.updatedAt || msg.updatedAt || new Date().toISOString();
     updateStatusBar(active.symbol, tfToSync, p > 0 ? p : 0,
-      'TradingView', active.updatedAt || msg.updatedAt || null,
+      'TradingView', _srvTs,
       msg.systemStatus?.fluxStatus === 'LIVE');
+    // Set tvMode depuis initial-sync — évite le badge 🔴 TV OFF au boot
+    const _tvCtx = msg.sourceContexts?.tradingview || {};
+    const _tvAgeMs = Number(_tvCtx.ageMs || Infinity);
+    const _syncTvMode = (msg.systemStatus?.fluxStatus === 'LIVE' && _tvAgeMs < 300000)
+      ? 'LIVE_TV' : (msg.systemStatus?.fluxStatus === 'LIVE' ? 'CACHE_TV' : 'OFFLINE');
+    if (_syncTvMode) { S.tvMode = _syncTvMode; _updateTvModeBadge(_syncTvMode); }
     // Synchroniser le widget — tvSymbol du serveur en priorité, sinon dériver depuis symbol
     const _syncTvSym = _isTvSymbol(active.tvSymbol) ? active.tvSymbol : _toTvWidgetSym(active.symbol);
     const _syncTvRes = _isTvResolution(active.tvResolution) ? active.tvResolution : _toTvWidgetRes(active.timeframe);
@@ -2140,16 +2183,23 @@ function handleSSE(msg) {
       if (S.position) S.position.bePlaced = true;
       setTimeout(refreshAll, 800);
     } else if (action === 'ANALYSER') {
-      // Extension ANALYSER → armer le dashboard en même temps
+      // Extension ANALYSER → dashboard lance aussi runAutoAnalysis pour résultats identiques
       const btn = el('btnAnalyse');
       if (btn && !btn.disabled) {
         btn.innerHTML = '<span class="spinner"></span>ANALYSE...';
         btn.classList.add('analyzing');
-        setTimeout(() => { btn.innerHTML = '🔍 ANALYSER'; btn.classList.remove('analyzing'); }, 12000);
+        setTimeout(() => { btn.innerHTML = '🔍 ANALYSER'; btn.classList.remove('analyzing'); }, 14000);
+        // Synchroniser: lancer l'analyse dashboard après que scan_TF soit terminé (~8s)
+        setTimeout(async () => {
+          if (typeof runAutoAnalysis === 'function' && !S_autoRunning) {
+            try { await runAutoAnalysis(); await refreshAll(); } catch(_) {}
+          }
+          btn.innerHTML = '🔍 ANALYSER'; btn.classList.remove('analyzing'); btn.disabled = false;
+        }, 8000);
       }
       const co = el('coachOutput');
       if (co) {
-        co.textContent = `🔍 Agent armé sur ${msg.symbol || S.symbol}.\nJe surveille les unités de temps en temps réel.\nAnalyse en cours...`;
+        co.textContent = `🔍 Sync extension — scan en cours...\n${msg.symbol || S.symbol} — Je synchronise les résultats dans ~8s.`;
         co.style.borderColor = '#3b82f6';
       }
       if (!S.armed) {
@@ -3253,9 +3303,48 @@ async function startGithubAgent() {
   }
 }
 
+// ── PRE-POPULATE TF CHIPS depuis bridge (sans cliquer ANALYSER) ─────────────
+async function _refreshTFChipsFromBridge() {
+  try {
+    const ext = await api('/extension/data');
+    const rv = ext?.robotV12 || {};
+    const _rsiToLec = r => r == null ? null : r >= 70 ? 'SURACHETÉ' : r >= 58 ? 'HAUSSIER' : r >= 42 ? 'NEUTRE' : r >= 30 ? 'BAISSIER' : 'SURVENDU';
+    const _lecToDir = l => {
+      if (!l) return 'WAIT';
+      const u = String(l).toUpperCase();
+      if (u.includes('HAUSSIER') || u === 'SURACHETÉ' || u.includes('ACHAT')) return 'LONG';
+      if (u.includes('BAISSIER') || u === 'SURVENDU'  || u.includes('VENTE')) return 'SHORT';
+      return 'NEUTRE';
+    };
+    const _tfMap = {
+      M1:  { rsi: rv.rsi_1m,  lec: rv.lecture_1m  || rv.lectureTech1 },
+      M5:  { rsi: rv.rsi_5m,  lec: rv.lecture_5m  || rv.lectureTech2 },
+      M15: { rsi: rv.rsi_15m, lec: rv.lecture_15m || rv.lectureTech3 },
+      H1:  { rsi: rv.rsi_60m, lec: rv.lecture_60m || rv.lectureTech4 },
+    };
+    const hasAny = Object.values(_tfMap).some(t => t.rsi != null || t.lec);
+    if (!hasAny) return; // rien à afficher
+    const scanTitle = el('scanTitle');
+    if (scanTitle && !scanTitle.textContent.includes('ANALYSE')) scanTitle.textContent = '📊 Multi-TF — Bridge live';
+    for (const [tf, t] of Object.entries(_tfMap)) {
+      const lec = t.lec || _rsiToLec(t.rsi);
+      const dir = _lecToDir(lec);
+      if (t.rsi != null || t.lec) scanMarkDone(tf, dir, t.rsi ?? null);
+    }
+    // Résumé confluence
+    const entries = Object.entries(_tfMap).filter(([,t]) => t.rsi != null || t.lec);
+    const longs  = entries.filter(([,t]) => _lecToDir(t.lec || _rsiToLec(t.rsi)) === 'LONG').length;
+    const shorts = entries.filter(([,t]) => _lecToDir(t.lec || _rsiToLec(t.rsi)) === 'SHORT').length;
+    const total  = entries.length;
+    const conf   = total ? (longs > shorts ? 'LONG' : shorts > longs ? 'SHORT' : 'NEUTRE') : '—';
+    setText('scanSummary', total ? (longs + '/' + total + ' ▲ · ' + shorts + '/' + total + ' ▼ → ' + conf) : '');
+  } catch (_) {}
+}
+
 async function refreshAll() {
   await Promise.allSettled([refreshMarket(), refreshAnalysis(), refreshHistory(), refreshNews(), refreshUpcoming(), refreshGithubStatus()]);
   _applyStrictUI();
+  _refreshTFChipsFromBridge().catch(() => {});
 }
 
 // ── LIVE MONITOR ──────────────────────────────────────────────────────
@@ -3973,17 +4062,19 @@ async function runAutoAnalysis() {
 
   // Adel strict: aucune analyse/ARM/ENTER sans contexte bridge live valide (symbol+tf+≤30s + pas de désync)
   if (!_strictCtx().ok) { _applyStrictUI(); S_autoRunning = false; return; }
-  // Adel strict: aucun mode par défaut — doit venir du serveur/extension
-  const _m = String(S.mode || '').toUpperCase();
-  const _allowedModes = ['AUTO','SCALPER','SNIPER','SWING'];
-  if (!_m || !_allowedModes.includes(_m)) {
+  
+  // Adel strict: aucun mode par défaut — doit venir du serveur/extension UNIQUEMENT
+  // Ne JAMAIS assigner une valeur par défaut à S.mode — doit rester null jusqu'au serveur l'envoie
+  const _allowedModes = ['AUTO','SCALPER','SNIPER','SWING','ANALYSE','ALERTE','EXECUTION_PREPAREE'];
+  if (!S.mode || !_allowedModes.includes(String(S.mode).toUpperCase())) {
     const co = el('coachOutput');
     if (co) { co.textContent = '🚫 BLOQUÉ (Adel strict)\nMode manquant/invalide — attendre sync serveur.'; co.style.borderColor = 'var(--short)'; }
     _applyStrictUI();
     S_autoRunning = false;
     return;
   }
-  S.mode = _m;
+  // ✅ S.mode est valide et provient du serveur — l'utiliser directement
+  // (ne jamais le réassigner pour respecter la traçabilité source du serveur)
 
   // ── FAST-PATH LATENCE: si armé + setup déjà pré-validé (< 90s) → entrer AVANT le scan ──
   // Réduit la latence d'entrée de ~2-4s à ~100ms (le scan est coûteux, l'entrée ne l'attend plus)
@@ -4040,6 +4131,7 @@ async function runAutoAnalysis() {
 
     // Affiche scan panel
     if (scanPanel) { scanPanel.classList.add('active'); scanReset(); }
+    const _st = el('scanTitle'); if (_st) _st.textContent = '⚡ Analyse en cours — M1→M5→M15→H1';
     if (coachOut) {
       coachOut.textContent = '⚡ Analyse en cours...';
       coachOut.style.borderColor = 'var(--pending)';
@@ -4070,8 +4162,9 @@ async function runAutoAnalysis() {
       scanMarkDone(tfScan, dir, r.rsi ?? null);
       if (dir === 'LONG') longCount++; else if (dir === 'SHORT') shortCount++; else neutreCount++;
     }
-    S._lastScanMs  = Date.now() - _runStart; // mesure durée scan
-    S._lastMultiTF = Object.assign({}, multiTFResults); // cache pour vocal 30s
+    S._lastScanMs  = Date.now() - _runStart;
+    S._lastMultiTF = Object.assign({}, multiTFResults);
+    const _stDone = el('scanTitle'); if (_stDone) _stDone.textContent = '📊 Multi-TF — dernière analyse ' + new Date().toLocaleTimeString('fr-FR');
 
     // ── HIÉRARCHIE MODE — identique extension ────────────────────────────────
     // Adel strict: pas de hiérarchie TF codée en dur côté dashboard.
@@ -4236,8 +4329,9 @@ async function runAutoAnalysis() {
     }
 
     // ENTRER button — AGENT ADEL STRICT décide (pas IA seule ni hiérarchie seule)
-    // canEnter = agent complet ET canEnter=true ET pas de conflit ET LIVE_TV (règle NON MODIFIABLE)
-    const _isLiveTv = S.tvMode === 'LIVE_TV';
+    // LIVE_TV OU CACHE_TV avec données bridge récentes (< 90s) = autorisé
+    const _isLiveTv = S.tvMode === 'LIVE_TV'
+      || (S.tvMode === 'CACHE_TV' && S.bridgeUpdatedAtMs && (Date.now() - S.bridgeUpdatedAtMs) < 90000);
     const canEnter = _agentCanEnter && (_hierarchyCanEnter || !_hierarchyOk) && _isLiveTv;
     S.analysisReady = canEnter;
 
@@ -4536,10 +4630,23 @@ el('btnAnalyse').addEventListener('click', async () => {
   btn.classList.add('analyzing');
   btn.disabled = true;
   speak('Analyse ' + S.symbol + ' en cours.');
-  // La notification extension est envoyée dans runAutoAnalysis() — pas de doublon ici
   try {
     await runAutoAnalysis();
     await refreshAll();
+    // ── AUTO-ARM — identique extension: ANALYSER = armer automatiquement ──
+    if (!S.position && !S.armed) {
+      S.armed = true;
+      S._armedStartPrice = S.price;
+      S._armedSpeakCounter = 0;
+      if (typeof startArmedVocalLoop === 'function') startArmedVocalLoop();
+      // Notifier le serveur pour sync (extension verra l'état ARMED)
+      fetch('/extension/command', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-Adel-Key': 'Adel' },
+        body: JSON.stringify({ command: 'broadcast', payload: { type: 'trade-action', action: 'ANALYSER', symbol: S.symbol, source: 'dashboard' } })
+      }).catch(() => {});
+      speak('Robot armé sur ' + S.symbol + '. Je surveille et j\'entre au prochain setup validé.');
+    }
   } catch(e) {
     const coachOut = el('coachOutput');
     if (coachOut) { coachOut.textContent = '❌ Erreur: ' + e.message; }
@@ -5064,6 +5171,8 @@ window.addEventListener('load', async () => {
       S.serverTf = a.timeframe || cd.timeframe || null;
       updateStatusBar(a.symbol, a.timeframe, cd.price || a.price, 'TradingView',
         cd.updatedAt, ext.systemStatus?.fluxStatus === 'LIVE');
+      // Débloquer immédiatement si symbol+tf sont maintenant disponibles
+      _applyStrictUI();
       // Sync TF selector
       const selTF = el('selTF');
       if (selTF && a.timeframe && Array.from(selTF.options).some(o => o.value === a.timeframe)) {
@@ -5210,10 +5319,28 @@ window.addEventListener('load', async () => {
       const _age = d.ageLabel || '—';
       const _mode = d.tvMode || (d.source === 'keepalive-cache' ? 'CACHE_TV' : 'LIVE_TV');
 
-      // Mettre à jour S.bridgeUpdatedAtMs depuis sync-check (filet de sécurité si SSE lent)
-      if (typeof S !== 'undefined' && d.connected && d.ageMs != null) {
-        S.bridgeUpdatedAtMs = Date.now() - d.ageMs;
+      // Injecter symbol + tf + price + tvMode dans S — filet de sécurité si SSE/boot lent
+      if (typeof S !== 'undefined' && d.connected && d.symbol) {
+        if (d.ageMs != null) S.bridgeUpdatedAtMs = Date.now() - d.ageMs;
         if (!S.tvMode || _mode !== 'OFFLINE') { S.tvMode = _mode; S.requiresTradingView = !!d.requiresTradingView; }
+        // Injecter symbol + tf si manquants dans S (liaison server → dashboard)
+        if (d.symbol && !S.symbol) {
+          if (typeof updateStatusBar === 'function' && d.price > 0) {
+            updateStatusBar(d.symbol, d.timeframe, d.price, 'TradingView', new Date().toISOString(), _mode !== 'OFFLINE');
+          } else {
+            S.symbol = d.symbol.toUpperCase();
+            S.serverSymbol = d.symbol.toUpperCase();
+            if (d.timeframe) { S.tf = d.timeframe.toUpperCase(); S.serverTf = d.timeframe.toUpperCase(); }
+          }
+        }
+        // Injecter TF séparément si manquant (S.symbol peut être défini sans S.tf)
+        if (d.timeframe && !S.tf) {
+          S.tf = d.timeframe.toUpperCase();
+          S.serverTf = d.timeframe.toUpperCase();
+          if (typeof setText === 'function') setText('statusTF', S.tf);
+          const _tfLabel = document.getElementById('tfCurrentLabel');
+          if (_tfLabel) _tfLabel.textContent = S.tf;
+        }
         if (typeof _updateTvModeBadge === 'function') _updateTvModeBadge(_mode);
         if (typeof _applyStrictUI === 'function') _applyStrictUI();
       }

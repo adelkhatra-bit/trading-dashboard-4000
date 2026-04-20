@@ -64,14 +64,15 @@ const ChartModule = {
       const resp = await fetch(`${this._apiBase}/klines?symbol=${encodeURIComponent(symbol)}&tf=${encodeURIComponent(this._currentTF)}&limit=200`, {
         method: 'GET',
         headers: { 'Content-Type': 'application/json' },
-        signal: AbortSignal.timeout(8000)
+        signal: AbortSignal.timeout(15000)
       });
-      
+
       if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
-      
+
       const data = await resp.json();
       const sourceRates = Array.isArray(data?.candles) ? data.candles : [];
-      if (!data.ok) throw new Error(data.error || 'klines error');
+      // Vérifier ok APRÈS candles pour que la 0-candles-check passe en priorité
+      if (!data.ok && sourceRates.length === 0) throw new Error(data.error || 'klines error');
       if (sourceRates.length === 0) {
         // Pas d'historique OHLCV — TradingView n'a pas encore envoyé de ticks
         // Afficher un message silencieux sans crasher

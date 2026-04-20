@@ -23,7 +23,7 @@ const POPUP_STATE_KEY = 'taa_popup_state_v2';
 // ── ADEL SIGNATURE ────────────────────────────────────────────────────────────
 window.ADEL = true;
 window.ADEL_EXT_ID = 'bbdmldjileifgbmhgeodfjjodajogjip';
-window.ADEL_VERSION = '2.0.0';
+window.ADEL_VERSION = '2.1.0';
 const ADEL_SIG = 'TRADING-AUTO-ANALYZER';
 console.log('[ADEL] Popup actif — Trading Auto Analyzer', window.ADEL_VERSION, '|', window.ADEL_EXT_ID);
 
@@ -4108,19 +4108,20 @@ function renderBiasBanner(live, newsEvents) {
 // ─── MAIN REFRESH ────────────────────────────────────────────────────────────
 async function refreshHealth() {
   try {
-    flowLog('API REQUEST /health', { symbol: state.symbol, timeframe: state.timeframe });
-    var h = await fetchJson('/health');
-    flowLog('API RESPONSE /health', {
-      ok: !!h.ok,
-      bridgeStatus: h.bridgeStatus || null,
-      activeContext: h.activeContext || null
-    });
+    flowLog('API REQUEST /api/sync-check', { symbol: state.symbol, timeframe: state.timeframe });
+    var d = await fetchJson('/api/sync-check');
+    var h = {
+      ok: !!d.connected,
+      bridgeStatus: d.source || d.bridge || 'offline',
+      activeContext: { symbol: d.symbol || null, price: d.price || null, timeframe: d.timeframe || null }
+    };
+    flowLog('API RESPONSE /api/sync-check', { ok: h.ok, bridgeStatus: h.bridgeStatus, activeContext: h.activeContext });
     renderBadges(h);
     markConnectionOk('ONLINE');
     return h;
   } catch (_) {
     state.conn.healthFails = Number(state.conn.healthFails || 0) + 1;
-    flowLog('API ERROR /health', { symbol: state.symbol, timeframe: state.timeframe });
+    flowLog('API ERROR /api/sync-check', { symbol: state.symbol, timeframe: state.timeframe });
     renderBadges(null);
     markConnectionTransientFail();
     return null;
@@ -4408,6 +4409,8 @@ function loadTVChart(symbol, tf) {
 }
 // ─────────────────────────────────────────────────────────────────────────────
 
+var _autoScanLastTf = null; // TF du dernier scan auto — détecte changement TV
+
 async function loadMirrorSnapshot() {
   // Source unique : TradingView live
   var ext = await fetchJson('/extension/data');
@@ -4420,7 +4423,18 @@ async function loadMirrorSnapshot() {
   if (ext && ext.bridgeConfig) applyBridgeConfig(ext.bridgeConfig);
   var active = ext.activeSymbol;
   state.symbol = String(active.symbol).toUpperCase();
-  state.timeframe = String(active.timeframe).toUpperCase();
+  var _newTf = String(active.timeframe).toUpperCase();
+  var _tfJustChanged = (_autoScanLastTf !== null && _autoScanLastTf !== _newTf);
+  state.timeframe = _newTf;
+  _autoScanLastTf = _newTf;
+  // ── AUTO-SCAN sur changement TF TradingView ──
+  // Si l'utilisateur change de TF sur TV et qu'aucune position n'est active,
+  // déclencher un scan RSI multi-TF automatique + rafraîchir l'affichage.
+  if (_tfJustChanged && !(state.tradeState && state.tradeState.entered)) {
+    console.log('[POPUP] TF changé:', _autoScanLastTf, '→', _newTf, '— scan auto');
+    try { chrome.runtime.sendMessage({ type: 'SCAN_TF' }); } catch(_) {}
+    setTimeout(function() { refreshAll().catch(function(){}); }, 7500);
+  }
   if (active.mode) {
     var m = String(active.mode).toUpperCase();
     if (['AUTO','SCALPER','SNIPER','SWING','ANALYSE','ALERTE','EXECUTION_PREPAREE'].indexOf(m) >= 0) state.tradeMode = m;
@@ -11423,6 +11437,9 @@ function showLiveFlux(msg) {
 
 function connectSSE() {
   if (state.sse) { try { state.sse.close(); } catch (_) {} state.sse = null; }
+  // Grace period: initialiser _lastBridgeDataAt au démarrage pour éviter désarmement immédiat
+  // Le keepalive envoie un tick dans les 20s → _lastBridgeDataAt sera mis à jour avant les 90s
+  if (!state._lastBridgeDataAt) state._lastBridgeDataAt = Date.now();
   var es = new EventSource(API + '/extension/sync');
   state.sse = es;
   es.onopen = function() { markConnectionOk('ONLINE'); };

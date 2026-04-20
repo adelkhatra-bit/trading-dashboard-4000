@@ -223,8 +223,15 @@ async function scrapAndSendTradingView() {
     _lastSuccessfulScrap = Date.now(); // Watchdog: marquer bridge actif
     console.log('[BG] Panel scraped:', panelData.symbol, panelData.panelText);
 
+    const _prevSym = systemState.activeSymbol;
     systemState.activeSymbol = panelData.symbol;
     systemState.activeTimeframe = panelData.timeframe || systemState.activeTimeframe;
+    // Nouveau symbole détecté → scan RSI multi-TF immédiat (pas d'attente timer)
+    if (_prevSym !== panelData.symbol && !_scanTfRunning) {
+      console.log('[ADEL] Nouveau symbole:', panelData.symbol, '— scan TF immédiat');
+      _autoScanLastAt = 0; // force tickAutoScan à relancer
+      setTimeout(() => scanAllTimeframes().catch(() => {}), 2000);
+    }
     const parsedPanelPrice = Number(panelData.price);
     let resolvedPrice = Number.isFinite(parsedPanelPrice) && parsedPanelPrice > 0 ? parsedPanelPrice : null;
 
@@ -947,9 +954,9 @@ function _getAutoScanDelayMs() {
   // Approche zone : dominance directionnelle > 50%
   const approaching = (Number(snap.macroBull || 0) > 50 || Number(snap.macroBear || 0) > 50
                       || Number(snap.scoreTech3 || snap.scoreTech4 || 0) >= 50);
-  if (approaching) return 5 * 60 * 1000;
-  // Hors zone : re-check H1+M15 toutes les 15min
-  return 15 * 60 * 1000;
+  if (approaching) return 3 * 60 * 1000;
+  // Hors zone : re-check H1+M15 toutes les 2min (données fraîches sans attendre)
+  return 2 * 60 * 1000;
 }
 
 function tickAutoScan() {
@@ -980,14 +987,14 @@ function startPolling() {
 
   // Auto-scan adaptatif — vérifie toutes les 30s si un scan est dû
   setInterval(tickAutoScan, 30 * 1000);
-  // Premier scan au démarrage après 8s (laisser le scrape initial s'établir)
+  // Premier scan au démarrage après 3s — donne des RSI réels par TF sans cliquer ANALYSER
   setTimeout(function() {
     if (systemState.activeSymbol && systemState.activePrice) {
       console.log('[ADEL] AUTO SCAN INIT — premier scan M1/M5/M15/H1');
       _autoScanLastAt = Date.now();
       scanAllTimeframes().catch(() => {});
     }
-  }, 8000);
+  }, 3000);
 
   // ── ALARMS MV3 — persistent même si le service worker est tué par Chrome ──
   chrome.alarms.create('scrape-tv',    { periodInMinutes: 1 });

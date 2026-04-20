@@ -396,8 +396,16 @@ function _bridgeKeepaliveTick() {
   })[0];
   const cached = tvDataStore[sym];
   if (!cached || !(cached.price > 0)) return;
-  // Rafraîchir updatedAt en ms pour que getLivePrice accepte ce prix
+  // Rafraîchir uniquement le timestamp keepalive (pas _realUpdatedAt) pour que le dashboard reste débloqué.
+  // _realUpdatedAt = dernier vrai tick Pine — jamais écrasé par keepalive.
+  if (!cached._realUpdatedAt) cached._realUpdatedAt = cached.updatedAt;
   tvDataStore[sym].updatedAt = Date.now();
+  // tvMode LIVE_TV si le dernier vrai tick Pine est < 5 min — données TV encore fraîches
+  const _realTs = typeof cached._realUpdatedAt === 'number'
+    ? cached._realUpdatedAt
+    : (cached._realUpdatedAt ? new Date(cached._realUpdatedAt).getTime() : 0);
+  const _realAge = _realTs > 0 ? Date.now() - _realTs : Infinity;
+  const _kaTvMode = _realAge < 300000 ? 'LIVE_TV' : 'CACHE_TV';
   broadcastToExtension({
     type: 'tradingview-data',
     symbol: sym,
@@ -406,7 +414,8 @@ function _bridgeKeepaliveTick() {
     tvSymbol: cached.tvSymbol || _getWidgetSymbol(null, sym) || null,
     tvResolution: cached.tvResolution || _tfToTvResolution(cached.timeframe) || null,
     updatedAt: new Date().toISOString(),
-    source: 'keepalive-cache',
+    source: _kaTvMode === 'LIVE_TV' ? 'tradingview-live' : 'keepalive-cache',
+    tvMode: _kaTvMode,
     // Inclure bridgeData cached → met à jour toutes les cartes TF même sans tick Pine
     bridgeData: cached.bridgeData || null,
     keepalive: true
@@ -417,7 +426,7 @@ _startBridgeKeepalive();
 
 const BRIDGE_GATE_EXEMPT = new Set([
   '/tv-bridge', '/tradingview/live', '/tv-webhook', '/webhook', '/bridge/robot-v12',
-  '/health', '/ping', '/bridge/health', '/stream', '/extension/sync', '/',
+  '/ping', '/bridge/health', '/stream', '/extension/sync', '/',
   '/api/github-positions', '/api/github-positions/config', '/api/github-positions/status',
   // Routes appelées par l'extension Chrome — doivent passer même quand bridge offline
   '/live/state', '/extension/command', '/extension/data', '/extension/scan-flag',
@@ -454,11 +463,11 @@ app.use(function globalBridgeGate(req, res, next) {
 // ─── DEV TEST — forcer état bridge pour tests CI ─────────────────────────────
 // POST /debug/bridge-offline → simule bridge offline (stale >30s)
 // POST /debug/bridge-online  → restaure bridge online
-app.post('/debug/bridge-offline', (req, res) => {
+app.post('/debug/bridge-offline', requireAdelKey, (req, res) => {
   _bridgeLiveAt = Date.now() - 60000; // 60s dans le passé → stale
   res.json({ ok: true, bridgeForcedOffline: true, _bridgeLiveAt });
 });
-app.post('/debug/bridge-online', (req, res) => {
+app.post('/debug/bridge-online', requireAdelKey, (req, res) => {
   _bridgeKeepaliveEnabled = true;
   signalBridgeLive();
   res.json({ ok: true, bridgeForcedOnline: true, _bridgeLiveAt });
@@ -1010,29 +1019,91 @@ app.get('/status', (_req, res) => {
 
 app.get('/popup.html', (_req, res) => sendHTMLWithHelper(res, path.join(__dirname, 'popup.html')));
 
-app.get('/coach/live-analysis', async (req, res) => {
-  const symbol = req.query.symbol || marketStore.symbol || 'XAUUSD';
-  const price   = marketStore.price || 0;
-  const bridge  = marketStore.lastBridgePayload || {};
-  const ts      = coachTradeStateStore[symbol] || {};
-  res.json({
-    ok: true,
-    symbol,
-    price,
-    phase: ts.phase || 'IDLE',
-    entered: ts.entered || false,
-    direction: ts.direction || null,
-    sl: ts.sl || null,
-    tp: ts.tp || null,
-    bridgeActive: !!marketStore.bridgeActive,
-    lectureTech: {
-      tf1: bridge.lectureTech1 || null,
-      tf2: bridge.lectureTech2 || null,
-      tf3: bridge.lectureTech3 || null,
-      tf4: bridge.lectureTech4 || null
-    },
-    ts: Date.now()
-  });
+app.get('/coach/live-analysis', (req, res) => {
+  try {
+    const sym      = String(req.query.symbol || '').toUpperCase() || (activeSymbol?.symbol) || marketStore.symbol || 'XAUUSD';
+    const tvLive   = tvDataStore[sym] || null;
+    const tvAge    = tvLive ? (Date.now() - (tvLive.updatedAt || 0)) : Infinity;
+    const bridgeOk = tvLive && tvAge < 60000;
+
+    const tradeState = (typeof getCoachTradeState === 'function') ? getCoachTradeState(sym, 'H1') : (coachTradeStateStore[sym] || {});
+    const ts  = tradeState || {};
+    const pos = ts.virtualPosition || null;
+    const currentPrice = bridgeOk ? (tvLive.price || 0) : (pos?.entry || marketStore.price || 0);
+
+    // P&L pips
+    let pnlPips = 0, pnlSign = '+', progressPct = 0, rrLeft = 0;
+    if (pos && pos.entry > 0 && currentPrice > 0) {
+      const isLongP = String(pos.direction || '').toUpperCase().includes('LONG') || String(pos.direction || '').toUpperCase().includes('BUY');
+      const raw = isLongP ? (currentPrice - pos.entry) : (pos.entry - currentPrice);
+      pnlPips = Math.round(raw * (sym.includes('JPY') ? 100 : 10000)) / 10;
+      pnlSign = pnlPips >= 0 ? '+' : '-';
+      if (pos.sl && pos.tp && pos.tp > 0) {
+        const totalR = Math.abs(pos.tp - pos.entry);
+        progressPct = totalR > 0 ? Math.round(Math.abs(raw) / totalR * 100) : 0;
+        const remaining = Math.abs(pos.tp - currentPrice);
+        rrLeft = totalR > 0 ? Math.round(remaining / totalR * 10) / 10 : 0;
+      }
+    }
+
+    // Momentum depuis bridge
+    const bridge = marketStore.lastBridgePayload || {};
+    const lt3 = String(tvLive?.lectureTech3 || '').toUpperCase();
+    const lt4 = String(tvLive?.lectureTech4 || '').toUpperCase();
+    const sc3 = Number(tvLive?.scoreTech3 || 0);
+    const sc4 = Number(tvLive?.scoreTech4 || 0);
+    const hasIndicators = bridgeOk && (sc3 > 0 || sc4 > 0);
+    const posDir = String(pos?.direction || ts.direction || '').toUpperCase();
+    const isLong = posDir.includes('LONG') || posDir.includes('BUY');
+    let momentum = 'neutre';
+    if (!hasIndicators) {
+      momentum = 'données manquantes';
+    } else if (sc4 >= 70 && sc3 >= 65) {
+      momentum = 'fort';
+    } else if (sc4 >= 55 || sc3 >= 55) {
+      momentum = (isLong ? lt4.includes('ACHAT') : lt4.includes('VENTE')) ? 'moyen' : 'ralentissement';
+    } else {
+      momentum = (isLong ? lt4.includes('VENTE') : lt4.includes('ACHAT')) ? 'retournement possible' : 'neutre';
+    }
+
+    let action = 'HOLD', suggestion = 'Tenir la position — surveillance.', alertLevel = null;
+    if (pnlPips > 0 && progressPct >= 50) { action = 'TRAIL_SL'; suggestion = 'Déplacer SL au-dessus du coût. Gains partiels sécurisés.'; alertLevel = 'attention'; }
+    if (pnlPips > 0 && progressPct >= 80) { action = 'PARTIAL_TP'; suggestion = 'Objectif proche — sortie partielle recommandée.'; alertLevel = 'urgent'; }
+    if (momentum === 'retournement possible') { action = 'SECURISER'; suggestion = 'Signal de retournement — sécuriser les gains ou sortir.'; alertLevel = 'urgent'; }
+
+    const details = [];
+    if (bridgeOk) {
+      if (sc4 > 0) details.push(`H1 score: ${sc4}% — ${lt4 || 'N/A'}`);
+      if (sc3 > 0) details.push(`M15 score: ${sc3}% — ${lt3 || 'N/A'}`);
+      if (tvLive?.bullRej) details.push('⚠ Rejet haussier structure');
+      if (tvLive?.bearRej) details.push('⚠ Rejet baissier structure');
+    }
+
+    res.json({
+      ok: true,
+      symbol: sym, sym,
+      price: currentPrice,
+      phase: ts.phase || 'IDLE',
+      entered: ts.entered || false,
+      direction: ts.direction || posDir || null,
+      sl: ts.sl || pos?.sl || null,
+      tp: ts.tp || pos?.tp || null,
+      bridgeActive: !!marketStore.bridgeActive || bridgeOk,
+      lectureTech: {
+        tf1: bridge.lectureTech1 || tvLive?.lectureTech1 || null,
+        tf2: bridge.lectureTech2 || tvLive?.lectureTech2 || null,
+        tf3: bridge.lectureTech3 || lt3 || null,
+        tf4: bridge.lectureTech4 || lt4 || null
+      },
+      momentum, marketState: bridgeOk ? 'BRIDGE ACTIF' : 'BRIDGE HORS LIGNE',
+      suggestion, action, alertLevel, details,
+      pnlPips: Math.abs(pnlPips), pnlSign,
+      progressPct: Math.min(100, progressPct), hasIndicators, rrLeft,
+      ts: Date.now()
+    });
+  } catch (e) {
+    res.json({ ok: false, error: e.message });
+  }
 });
 
 // ─── HEALTH ────────────────────────────────────────────────────────────────────
@@ -1042,26 +1113,7 @@ app.get('/strict-rules', (_req, res) => {
 });
 
 app.get('/health', (_req, res) => {
-  const resolvedCtx = resolveActiveRuntimeContext();
-  res.json({
-    ok: true,
-    port: PORT,
-    timestamp: new Date().toISOString(),
-    uptime: process.uptime(),
-    bridgeStatus: marketStore.systemStatus?.source || 'offline',
-    dataSource: marketStore.systemStatus?.fluxStatus || 'OFFLINE',
-    // Active context resolved from runtime truth (Bridge TV)
-    activeContext: {
-      symbol: resolvedCtx.active.symbol || null,
-      timeframe: resolvedCtx.active.timeframe || 'H1',
-      price: resolvedCtx.active.price ?? null,
-      source: resolvedCtx.active.source || 'none',
-      resolvedBy: resolvedCtx.active.resolvedBy || 'none',
-      mode: resolvedCtx.selected?.mode || bridgeConfig.bridgeMode || 'AUTO',
-      modeResolved: resolvedCtx.selected?.modeResolved || resolveRuntimeMode(bridgeConfig.bridgeMode || 'AUTO', resolvedCtx.active.symbol, resolvedCtx.active.timeframe || 'H1')
-    },
-    sourceContexts: resolvedCtx
-  });
+  res.status(410).json({ ok: false, removed: true, message: 'Route supprimée. Utiliser /api/bridge/keepalive ou /bridge/health.' });
 });
 
 function getLatestTradingviewRuntime() {
@@ -1280,6 +1332,22 @@ function resolveActiveRuntimeContext() {
       resolvedBy: 'extension-active-symbol',
       updatedAt: activeSymbol?.updatedAt || null
     };
+  }
+
+  // FALLBACK: Garantir un symbole valide au boot (évite blocage "CONTEXTE INCOMPLET")
+  if (!active.symbol) {
+    active.symbol = selectedSymbol ? String(selectedSymbol || '').toUpperCase() : 'EURUSD';
+    if (!active.timeframe) active.timeframe = selectedTf || 'H1';
+    active.source = selectedSymbol ? 'extension-fallback' : 'system-default';
+    active.resolvedBy = selectedSymbol ? 'fallback-selected' : 'no-selection-use-default';
+  }
+
+  // CRITICAL: Toujours garantir updatedAt valide ET RÉCENT (jamais null, jamais stale)
+  // Si aucun timestamp OU timestamp > 90s old → utiliser maintenant
+  const _tsMs = active.updatedAt ? Date.parse(active.updatedAt) : NaN;
+  const _ageMs = isFinite(_tsMs) ? (Date.now() - _tsMs) : Infinity;
+  if (!active.updatedAt || !isFinite(_ageMs) || _ageMs > 90000) {
+    active.updatedAt = new Date().toISOString();
   }
 
   const selectedModeRaw = activeSymbol?.mode || bridgeConfig.bridgeMode || 'AUTO';
@@ -1610,6 +1678,13 @@ app.get('/audit/health', (_req, res) => {
 });
 
 // ─── MAPPING ROUTES ────────────────────────────────────────────────────────────
+const MAPPINGS_PATH = path.join(__dirname, 'store', 'mappings.json');
+const _symbolMappings = (() => {
+  try { return JSON.parse(fs.readFileSync(MAPPINGS_PATH, 'utf8')); } catch (_) { return {}; }
+})();
+function _saveMappings() {
+  try { fs.writeFileSync(MAPPINGS_PATH, JSON.stringify(_symbolMappings, null, 2), 'utf8'); } catch (_) {}
+}
 
 // POST /mapping/resolve — Résolution intelligente de symbole
 app.post('/mapping/resolve', async (req, res) => {
@@ -1671,31 +1746,19 @@ app.post('/mapping/save', (req, res) => {
     if (!userInput || !tvSymbol) {
       return res.status(400).json({ ok: false, error: 'userInput and tvSymbol required' });
     }
-
+    _symbolMappings[String(userInput).toUpperCase()] = String(tvSymbol).toUpperCase();
+    _saveMappings();
     console.log(`[MAPPING] ${userInput} → ${tvSymbol}`);
-
-    res.json({
-      ok: true,
-      message: `Mapping saved: ${userInput} → ${tvSymbol}`,
-      userInput,
-      tvSymbol
-    });
+    res.json({ ok: true, message: `Mapping saved: ${userInput} → ${tvSymbol}`, userInput, tvSymbol });
   } catch (err) {
     res.status(500).json({ ok: false, error: err.message });
   }
 });
 
 // GET /mapping/list — Liste des mappings enregistrés
-app.get('/mapping/list', (req, res) => {
+app.get('/mapping/list', (_req, res) => {
   try {
-    // TODO: Charger depuis mapping.json
-    const mappings = [];
-    
-    res.json({
-      ok: true,
-      count: mappings.length,
-      mappings
-    });
+    res.json({ ok: true, count: Object.keys(_symbolMappings).length, mappings: _symbolMappings });
   } catch (err) {
     res.status(500).json({ ok: false, error: err.message });
   }
@@ -1823,7 +1886,7 @@ const BRIDGE_MODES = new Set(['AUTO', 'ANALYSE', 'ALERTE', 'EXECUTION_PREPAREE',
 
 const EXTENSION_RUNTIME_STATE_PATH = path.join(__dirname, 'store', 'extension-runtime-state.json');
 
-let activeSymbol = { symbol: null, timeframe: 'H1', price: null, updatedAt: null };
+let activeSymbol = { symbol: null, timeframe: 'H1', price: null, mode: 'AUTO', updatedAt: null };
 
 let bridgeConfig = {
   agentName: 'orchestrator',
@@ -2013,21 +2076,20 @@ app.get('/extension/sync', (_req, res) => {
     timestamp: new Date().toISOString(),
     systemStatus: marketStore.systemStatus || { source: 'offline', fluxStatus: 'OFFLINE' },
     activeSymbol: (() => {
-      const _sym = resolvedCtx.active.symbol || activeSymbol?.symbol || null;
-      const _tf  = resolvedCtx.active.timeframe || activeSymbol?.timeframe || 'H1';
+      // ✅ UTILISER DIRECTEMENT resolvedCtx.active qui a TOUS les fallbacks appliqués
+      const _active = resolvedCtx.active;
       return {
         ...(activeSymbol || {}),
-        symbol: _sym,
-        timeframe: _tf,
-        price: resolvedCtx.active.price ?? activeSymbol?.price ?? activeSymbol?.tvPrice ?? null,
-        source: resolvedCtx.active.source || 'none',
-        resolvedBy: resolvedCtx.active.resolvedBy || 'none',
-        tvSymbol: _getWidgetSymbol(null, _sym),
-        tvResolution: _tfToTvResolution(_tf),
-        // Keepalive actif = toujours envoyer timestamp frais (évite STALE initial-sync)
-        updatedAt: (_bridgeKeepaliveEnabled && _bridgeLiveAt && (Date.now() - _bridgeLiveAt < 30000))
-          ? new Date().toISOString()
-          : (resolvedCtx.active.updatedAt || null),
+        symbol: _active.symbol,           // ✅ Fallback EURUSD si null
+        timeframe: _active.timeframe,     // ✅ Fallback H1 si null
+        mode: activeSymbol?.mode || bridgeConfig.bridgeMode || 'AUTO',
+        price: _active.price ?? activeSymbol?.price ?? activeSymbol?.tvPrice ?? null,
+        source: _active.source || 'none',
+        resolvedBy: _active.resolvedBy || 'none',
+        tvSymbol: _getWidgetSymbol(null, _active.symbol),
+        tvResolution: _tfToTvResolution(_active.timeframe),
+        // ✅ updatedAt TOUJOURS frais (garanti par resolveActiveRuntimeContext)
+        updatedAt: _active.updatedAt || new Date().toISOString(),
       };
     })(),
     systemStatus: _bridgeKeepaliveEnabled && _bridgeLiveAt
@@ -2050,6 +2112,9 @@ app.get('/extension/sync', (_req, res) => {
       || (tvDataStore[_ksym] && tvDataStore[_ksym].price)
       || null;
     if (_ksym && _kprice > 0) {
+      const _ftRealTs = tvDataStore[_ksym]?._realUpdatedAt;
+      const _ftRealAge = _ftRealTs ? (Date.now() - (typeof _ftRealTs === 'number' ? _ftRealTs : new Date(_ftRealTs).getTime())) : Infinity;
+      const _ftMode = _ftRealAge < 300000 ? 'LIVE_TV' : 'CACHE_TV';
       const _freshTick = {
         type: 'tradingview-data',
         symbol: _ksym,
@@ -2058,7 +2123,8 @@ app.get('/extension/sync', (_req, res) => {
         tvSymbol: initialState.activeSymbol?.tvSymbol || null,
         tvResolution: initialState.activeSymbol?.tvResolution || null,
         updatedAt: new Date().toISOString(),
-        source: 'keepalive-cache',
+        source: _ftMode === 'LIVE_TV' ? 'tradingview-live' : 'keepalive-cache',
+        tvMode: _ftMode,
         timestamp: new Date().toISOString()
       };
       res.write('data: ' + JSON.stringify(_freshTick) + '\n\n');
@@ -2108,6 +2174,11 @@ function broadcastToExtension(message) {
     timestamp: new Date().toISOString(),
     type: message.type || 'data-update'
   };
+
+  // Ajouter le mode à tous les messages tradingview-data pour que le dashboard le reçoive
+  if ((data.type === 'tradingview-data' || data.type === 'tv-data') && !data.mode) {
+    data.mode = activeSymbol?.mode || bridgeConfig.bridgeMode || 'AUTO';
+  }
 
   // Bridge OFF: stop live flow propagation, keep control/sync events only.
   const t = String(data.type || '');
@@ -2613,8 +2684,9 @@ app.get('/positions', async (req, res) => {
   // Retourner les positions depuis le store (Bridge TV)
   const state  = marketStore.getState ? marketStore.getState() : {};
   const cached = state.analysisCache || {};
+  const filterSym = (req.query.symbol || '').toUpperCase() || null;
   const positions = Object.values(cached)
-    .filter(a => a?.trade)
+    .filter(a => a?.trade && (!filterSym || (a.trade.symbol || '').toUpperCase() === filterSym))
     .map(a => ({ ...a.trade, status: a.trade.trade_status || 'UNKNOWN' }));
 
   if (positions.length > 0) return res.json({ ok: true, positions, count: positions.length, source: 'tv-cache' });
@@ -2689,13 +2761,20 @@ async function _githubBridgeAgentTick() {
   if (!_githubPositionsUrl) return;
   try {
     const https = require('https');
-    const body = await new Promise((resolve, reject) => {
+    const { body: _body, statusCode: _sc } = await new Promise((resolve, reject) => {
       const req = https.get(_githubPositionsUrl, { timeout: 8000 }, (r) => {
-        let buf = ''; r.on('data', c => { buf += c; }); r.on('end', () => resolve(buf));
+        let buf = ''; r.on('data', c => { buf += c; }); r.on('end', () => resolve({ body: buf, statusCode: r.statusCode }));
       });
       req.on('error', reject); req.on('timeout', () => { req.destroy(); reject(new Error('timeout')); });
     });
-    let parsed = JSON.parse(body);
+    // 404 = fichier pas encore créé sur GitHub → agent actif mais 0 positions
+    if (_sc === 404) {
+      signalBridgeLive();
+      _githubAgentActive = true;
+      console.log('[GITHUB-AGENT] positions.json introuvable (404) — agent actif, en attente de signal LIA.');
+      return;
+    }
+    let parsed = JSON.parse(_body);
     const positions = Array.isArray(parsed) ? parsed : (parsed.positions || parsed.entries || []);
     if (positions.length === 0) {
       // Pas de positions mais URL valide → signaler bridge vivant quand même
@@ -3132,7 +3211,7 @@ let _runtimeCycleInProgress = false;
 let _runtimeSlowdownMs = 0;
 let _runtimeAutoSafeMode = false;
 let _runtimeLoopCurrentIntervalMs = 0;
-let _runtimeLoopTargetIntervalMs = SAFE_MODE ? 8000 : 5000;
+let _runtimeLoopTargetIntervalMs = SAFE_MODE ? 15000 : 10000;
 let _cpuPrevSample = null;
 let _cpuPercent = 0;
 let _runtimeCycleCounter = 0;
@@ -3469,15 +3548,18 @@ function runWithAgentLimit(fn, options = {}) {
 }
 
 // Runtime instrumentation for live task visibility (startedAt / elapsedMs / durationMs)
+// Catalogue réduit aux agents utiles uniquement — 26 agents décoratifs supprimés
 const AGENT_RUNTIME_CATALOG = [
-  'surveillance-agent', 'orchestrator', 'indicator-agent', 'repair-agent',
-  'technicalAgent', 'macroAgent', 'newsAgent', 'riskManager',
-  'strategyManager', 'tradeValidator', 'setupClassifier', 'syncManager',
-  'dataSourceManager', 'stateManager', 'supervisor', 'qaTester',
-  'continuous-loop', 'design-agent', 'bridge-agent', 'innovator-agent',
-    'verification-agent', 'mirror-agent', 'extension-agent', 'project-controller',
-    'ui-test-agent', 'logic-gap-agent', 'research-agent', 'human-interface-agent',
-    'central-guide-agent', 'analysis-agent', 'news-agent', 'position-explainer-agent', 'strategy-agent', 'risk-agent', 'execution-coach-agent', 'history-agent'
+  'orchestrator',
+  'technicalAgent',
+  'macroAgent',
+  'newsAgent',
+  'riskManager',
+  'tradeValidator',
+  'execution-coach-agent',
+  'verification-agent',
+  'surveillance-agent',
+  'lia-dashboard'
 ];
 
 const agentRuntime = {};
@@ -3924,18 +4006,22 @@ function updateAgentState(agentName, status, activeTask) {
   if (!agentStates[agentName]) {
     agentStates[agentName] = { status: 'unknown', lastActivity: Date.now(), activeTask: null };
   }
-  agentStates[agentName].status = status;
-  agentStates[agentName].lastActivity = Date.now();
-  agentStates[agentName].activeTask = activeTask;
-  
-  // 🔴 UNIFIED SYNC: Envoyer aussi à Extension + HTML clients
-  broadcastToExtension({
-    type: 'agent-state-update',
-    agent: agentName,
-    status: status,
-    activeTask: activeTask,
-    lastActivity: agentStates[agentName].lastActivity
-  });
+  const _prev = agentStates[agentName];
+  const _changed = _prev.status !== status || _prev.activeTask !== activeTask;
+  _prev.status = status;
+  _prev.lastActivity = Date.now();
+  _prev.activeTask = activeTask;
+
+  // Broadcast SSE uniquement si statut ou tâche a changé — évite le storm de messages inutiles
+  if (_changed) {
+    broadcastToExtension({
+      type: 'agent-state-update',
+      agent: agentName,
+      status: status,
+      activeTask: activeTask,
+      lastActivity: _prev.lastActivity
+    });
+  }
 
   scheduleBackupLiveMirror('agent-state', {
     ts: new Date().toISOString(),
@@ -4689,20 +4775,11 @@ async function runOrchestrationCycle() {
     const tvLive = tvDataStore[sym];
     const tvAge  = tvLive ? (Date.now() - (tvLive.updatedAt || 0)) : Infinity;
     if (tvLive && tvAge < 30000) {
-      // TradingView price disponible et récent (< 30s) — on l'utilise directement
       price = parseFloat(tvLive.price);
-      pushLog('orchestrator', 'system',
-        `BOUCLE ${sym} — prix TradingView (${(tvAge / 1000).toFixed(1)}s)`,
-        'ok', `source:TradingView · price:${price}`);
+      console.log(`[ORCH] ${sym} @ ${price} (${(tvAge/1000).toFixed(1)}s)`);
     } else {
-      // Bridge TV absent ou trop ancien — attendre le prochain tick
-      pushLog('orchestrator', 'system', `BOUCLE ${sym} — bridge TV absent ou > 30s`, 'warn', 'source:offline');
-      return;
+      return; // bridge absent ou trop ancien
     }
-
-    pushLog('orchestrator', 'technicalAgent',
-      `REQUÊTE analyse ${sym} @ ${price.toFixed(price > 10 ? 2 : 5)}`,
-      'ok', `TF:${tf} · cycle:auto`);
 
     // 2. LIA Robot — analyse PRO multi-TF (priorité absolue)
     try {
@@ -4894,6 +4971,8 @@ app.get('/popup.html',       (_req, res) => sendHTMLWithHelper(res, path.join(__
 app.get('/agents-monitor',   (_req, res) => sendHTMLWithHelper(res, path.join(__dirname, 'AGENTS_MONITOR.html')));
 app.get('/agents/monitor',   (_req, res) => sendHTMLWithHelper(res, path.join(__dirname, 'AGENTS_MONITOR.html')));
 app.get('/AGENTS_MONITOR.html', (_req, res) => sendHTMLWithHelper(res, path.join(__dirname, 'AGENTS_MONITOR.html')));
+app.get('/bridge-diagnostic', (_req, res) => sendHTMLWithHelper(res, path.join(__dirname, 'bridge-diagnostic.html')));
+app.get('/bridge-diagnostic.html', (_req, res) => sendHTMLWithHelper(res, path.join(__dirname, 'bridge-diagnostic.html')));
 
 // ─── MARKET NEWS — calendrier économique ForexFactory ────────────────────────
 let _newsCache = null;
@@ -5193,18 +5272,8 @@ function handleTvWebhook(req, res) {
     const ingressContentType = String(req.headers['content-type'] || 'unknown');
     const ingressHasBody = req.body !== undefined && req.body !== null && String(req.body).length > 0;
 
-    // Raw ingress log at route entry for tunnel/trigger debugging.
-    pushLog('tradingview-webhook', 'bridge-4000', 'WEBHOOK INGRESS', 'ok', {
-      route: ingressRoute,
-      method: req.method,
-      contentType: ingressContentType,
-      hasBody: ingressHasBody,
-      bodyType: typeof req.body,
-      bodyLength: ingressHasBody ? String(req.body).length : 0,
-      userAgent: req.headers['user-agent'] || null,
-      ip: req.headers['x-forwarded-for'] || req.ip || null,
-      receivedAt: ingressNow
-    });
+    // Ingress trace — console uniquement (pushLog ici = 2 SSE/tick → lag)
+    console.log('[TV-HOOK] ingress', ingressRoute, ingressContentType, ingressHasBody ? 'body:yes' : 'body:no');
 
     const receivedAt = new Date().toISOString();
     const contentType = String(req.headers['content-type'] || 'unknown');
@@ -5278,13 +5347,8 @@ function handleTvWebhook(req, res) {
       emitBridgeConfig('tv-webhook');
     }
 
-    // Raw payload log for monitor/live log/audit dashboard visibility.
-    pushLog('tradingview-webhook', 'bridge-4000', 'WEBHOOK RAW RECEIVED', 'ok', {
-      route,
-      contentType,
-      payload: rawPayload,
-      receivedAt
-    });
+    // Raw received — console uniquement pour éviter le storm SSE sur chaque tick
+    console.log('[TV-HOOK] raw recv', symbol || '?', resolvedTf, data.price || '?');
 
     if (!symbol) {
       pushLog('tradingview-webhook', 'bridge-4000', 'WEBHOOK REJECTED: missing symbol', 'error', {
@@ -5385,6 +5449,7 @@ function handleTvWebhook(req, res) {
       robotV12,
       timestamp,
       updatedAt: Date.now(),
+      _realUpdatedAt: Date.now(),
       source: 'tradingview'
     };
     const profile = normalizeSymbol(symbol);
@@ -5520,20 +5585,23 @@ function handleTvWebhook(req, res) {
       }
     }
 
-    // ── RSI SYNTHÉTIQUE — si Pine absent, calculer depuis historique prix ────
-    // Utilise _tvPriceWindow qui accumule jusqu'à 60 ticks (≥ 28 ticks = RSI14 valide)
-    if (tvStoreEntry.bridgeData.rsiTf1 == null || tvStoreEntry.bridgeData.rsiTf2 == null) {
+    // ── RSI SYNTHÉTIQUE — uniquement si AUCUN TF n'a de RSI réel ────────────
+    // RÈGLE: ne pas contaminer les TFs vides avec la valeur du TF courant.
+    // Synthetic fill = dernier recours quand zéro données multi-TF disponibles.
+    const _allTfNull = tvStoreEntry.bridgeData.rsiTf1 == null
+                    && tvStoreEntry.bridgeData.rsiTf2 == null
+                    && tvStoreEntry.bridgeData.rsiTf3 == null
+                    && tvStoreEntry.bridgeData.rsiTf4 == null;
+    if (_allTfNull) {
       const _pw = _tvPriceWindow[symbol] || _tvPriceWindow[canonical];
       if (_pw && _pw.length >= 28) {
         const _prices = _pw.map(p => p.price);
         const _synthR = _calcSynthRsi(_prices, 14);
         if (_synthR != null) {
-          // Même RSI pour tous les TFs (on n'a qu'une série = M1 synthétique)
-          // Suffit pour LIA pour détecter surachat/survente global
-          if (tvStoreEntry.bridgeData.rsiTf1 == null) { tvStoreEntry.bridgeData.rsiTf1 = _synthR; tvStoreEntry.robotV12.rsi_1m = _synthR; }
-          if (tvStoreEntry.bridgeData.rsiTf2 == null) { tvStoreEntry.bridgeData.rsiTf2 = _synthR; tvStoreEntry.robotV12.rsi_5m = _synthR; }
-          if (tvStoreEntry.bridgeData.rsiTf3 == null) { tvStoreEntry.bridgeData.rsiTf3 = _synthR; tvStoreEntry.robotV12.rsi_15m = _synthR; }
-          if (tvStoreEntry.bridgeData.rsiTf4 == null) { tvStoreEntry.bridgeData.rsiTf4 = _synthR; tvStoreEntry.robotV12.rsi_60m = _synthR; }
+          tvStoreEntry.bridgeData.rsiTf1 = _synthR; tvStoreEntry.robotV12.rsi_1m = _synthR;
+          tvStoreEntry.bridgeData.rsiTf2 = _synthR; tvStoreEntry.robotV12.rsi_5m = _synthR;
+          tvStoreEntry.bridgeData.rsiTf3 = _synthR; tvStoreEntry.robotV12.rsi_15m = _synthR;
+          tvStoreEntry.bridgeData.rsiTf4 = _synthR; tvStoreEntry.robotV12.rsi_60m = _synthR;
           tvStoreEntry.bridgeData._synthRsiUsed = true;
           tvStoreEntry.bridgeData._synthRsiVal  = _synthR;
         }
@@ -5932,6 +6000,108 @@ app.get('/bridge/health', (req, res) => {
   };
 
   res.json({ ok: chain.overall, chain, timestamp: new Date().toISOString() });
+});
+
+// ─── DIAGNOSTIC COMPLET: Pourquoi le système bloque ──────────────────────────
+app.get('/api/diagnostic/bridge-block', (req, res) => {
+  const now = Date.now();
+  const _toMs = v => {
+    if (!v) return 0;
+    if (typeof v === 'number') return v;
+    const n = new Date(v).getTime();
+    return isNaN(n) ? 0 : n;
+  };
+
+  // État du keepalive
+  const bridgeKeepaliveStatus = {
+    enabled: _bridgeKeepaliveEnabled,
+    lastBridgeLiveAt: _bridgeLiveAt,
+    ageMs: _bridgeLiveAt ? now - _bridgeLiveAt : null,
+    ageSec: _bridgeLiveAt ? Math.round((now - _bridgeLiveAt) / 1000) : null,
+    staleThresholdMs: BRIDGE_STALE_MS,
+    isStale: _bridgeLiveAt ? (now - _bridgeLiveAt) > BRIDGE_STALE_MS : true,
+    mode: getBridgeMode()
+  };
+
+  // État TradingView réel
+  const tvEntries = Object.entries(tvDataStore);
+  const latestTv = tvEntries.length > 0
+    ? tvEntries.reduce((a, b) => _toMs(a[1].updatedAt) > _toMs(b[1].updatedAt) ? a : b)
+    : null;
+  const tvDataStatus = {
+    count: tvEntries.length,
+    symbols: tvEntries.map(([s, d]) => ({
+      symbol: s,
+      price: d.price,
+      timeframe: d.timeframe,
+      updatedAt: d.updatedAt,
+      ageSeconds: Math.round((now - _toMs(d.updatedAt)) / 1000),
+      isLive: (now - _toMs(d.updatedAt)) < 30000
+    })),
+    latestSymbol: latestTv ? latestTv[0] : null,
+    latestPrice: latestTv ? latestTv[1].price : null,
+    latestTimeframe: latestTv ? latestTv[1].timeframe : null,
+    latestAgeSeconds: latestTv ? Math.round((now - _toMs(latestTv[1].updatedAt)) / 1000) : null,
+    isLive: latestTv && (now - _toMs(latestTv[1].updatedAt)) < 30000
+  };
+
+  // État des ticks TradingView réels (pas keepalive)
+  const realTvTickStatus = {
+    lastRealTvTickAt: _lastRealTvTickAt,
+    ageMs: _lastRealTvTickAt ? now - _lastRealTvTickAt : null,
+    ageSec: _lastRealTvTickAt ? Math.round((now - _lastRealTvTickAt) / 1000) : null,
+    staleThresholdMs: REAL_TV_STALE_MS,
+    isStale: _lastRealTvTickAt ? (now - _lastRealTvTickAt) > REAL_TV_STALE_MS : true
+  };
+
+  // Blocage détecté
+  const blockageAnalysis = {
+    isBlocked: !tvDataStatus.isLive || bridgeKeepaliveStatus.isStale,
+    reason: [],
+    fixes: []
+  };
+
+  if (!tvDataStatus.isLive) {
+    blockageAnalysis.reason.push('NO_LIVE_DATA: Aucune donnée TradingView < 30s');
+    blockageAnalysis.fixes.push('1. Vérifier que TradingView est ouvert dans le navigateur');
+    blockageAnalysis.fixes.push('2. Vérifier que l\'extension envoie les données à /tradingview/live');
+    blockageAnalysis.fixes.push('3. Vérifier que le symbole/timeframe est actif dans TradingView');
+    blockageAnalysis.fixes.push('4. Activer le keepalive: POST /api/bridge/keepalive { enable: true }');
+  }
+
+  if (bridgeKeepaliveStatus.isStale) {
+    blockageAnalysis.reason.push('KEEPALIVE_STALE: Le keepalive n\'a pas été mis à jour depuis > 30s');
+    blockageAnalysis.fixes.push('POST /api/bridge/keepalive pour rafraîchir');
+  }
+
+  if (tvDataStatus.count === 0) {
+    blockageAnalysis.reason.push('NO_DATA_STORE: tvDataStore vide — aucun symbole n\'a jamais été reçu');
+    blockageAnalysis.fixes.push('Lancer TradingView et l\'extension, vérifier la connexion');
+  }
+
+  // SSE clients
+  const sseStatus = {
+    extensionClients: typeof extensionSyncClients !== 'undefined' ? extensionSyncClients.length : 0,
+    coachClients: typeof coachStreamClients !== 'undefined' ? coachStreamClients.size : 0,
+    hasClients: (typeof extensionSyncClients !== 'undefined' && extensionSyncClients.length > 0) ||
+                (typeof coachStreamClients !== 'undefined' && coachStreamClients.size > 0)
+  };
+
+  res.json({
+    ok: false,
+    timestamp: new Date().toISOString(),
+    blockageAnalysis,
+    keepalive: bridgeKeepaliveStatus,
+    tvData: tvDataStatus,
+    realTvTick: realTvTickStatus,
+    sseClients: sseStatus,
+    nextSteps: [
+      '1. Vérifier que TradingView et l\'extension sont actifs',
+      '2. Activer le keepalive si nécessaire: POST /api/bridge/keepalive',
+      '3. Vérifier les logs: GET /SYSTEM_LOG.json',
+      '4. Redémarrer le serveur si le keepalive échoue'
+    ]
+  });
 });
 
 app.get('/tv/data', (req, res) => {
@@ -8988,6 +9158,20 @@ RÈGLES TRADING ADEL STREET (NON NÉGOCIABLES):
         };
       }
 
+      // ── MULTI-TF RESULTS — alimente les cartes TF dashboard/extension ───────
+      const _multiTFResults = {};
+      for (const [_mTf, _mEntry] of Object.entries(_rvTfMap)) {
+        const _mRsi = _mEntry.rsi;
+        const _mLec = _mEntry.lecture;
+        if (_mRsi == null && !_mLec) continue;
+        const _mLecFinal = _mLec || _rvRsiToLec(_mRsi);
+        const _mDir = !_mLecFinal ? 'WAIT'
+          : (_mLecFinal.includes('HAUSSIER') || _mLecFinal === 'SURACHETÉ' || _mLecFinal.includes('ACHAT') || _mLecFinal === 'HAUSSE') ? 'LONG'
+          : (_mLecFinal.includes('BAISSIER') || _mLecFinal === 'SURVENDU'  || _mLecFinal.includes('VENTE') || _mLecFinal === 'BAISSE') ? 'SHORT'
+          : 'NEUTRE';
+        _multiTFResults[_mTf] = { direction: _mDir, rsi: _mRsi != null ? Number(_mRsi) : null, signal: _mLecFinal || _mDir };
+      }
+
       res.json({
         ok: true,
         symbol,
@@ -9007,6 +9191,7 @@ RÈGLES TRADING ADEL STREET (NON NÉGOCIABLES):
         tradeReasoning,
         tradeState,
         instantTrade,
+        multiTFResults: _multiTFResults,
         virtualPosition: virtualPack.virtualPosition,
         nextAction: virtualPack.nextAction,
         priceConsistency,
@@ -9556,83 +9741,7 @@ app.get('/stability/status', (_req, res) => {
   });
 });
 
-app.get('/coach/live-analysis', (req, res) => {
-  try {
-    const sym = String(req.query.symbol || '').toUpperCase() || (activeSymbol?.symbol) || 'XAUUSD';
-    const tvLive = tvDataStore[sym] || null;
-    const tvAge  = tvLive ? (Date.now() - (tvLive.updatedAt || 0)) : Infinity;
-    const bridgeOk = tvLive && tvAge < 60000;
-
-    const tradeState = getCoachTradeState(sym, 'H1');
-    const pos = tradeState?.virtualPosition || null;
-    const currentPrice = bridgeOk ? (tvLive.price || 0) : (pos?.entry || 0);
-
-    // P&L pips calculation
-    let pnlPips = 0, pnlSign = '+', progressPct = 0, rrLeft = 0;
-    if (pos && pos.entry > 0 && currentPrice > 0) {
-      const isLong = String(pos.direction || '').toUpperCase().includes('LONG') || String(pos.direction || '').toUpperCase().includes('BUY');
-      const raw = isLong ? (currentPrice - pos.entry) : (pos.entry - currentPrice);
-      pnlPips = Math.round(raw * (sym.includes('JPY') ? 100 : 10000)) / 10;
-      pnlSign = pnlPips >= 0 ? '+' : '-';
-      if (pos.sl && pos.tp && pos.tp > 0) {
-        const totalR = Math.abs(pos.tp - pos.entry);
-        progressPct = totalR > 0 ? Math.round(Math.abs(raw) / totalR * 100) : 0;
-        const remaining = Math.abs(pos.tp - currentPrice);
-        rrLeft = totalR > 0 ? Math.round(remaining / totalR * 10) / 10 : 0;
-      }
-    }
-
-    // Momentum from bridge data
-    const lt3 = String(tvLive?.lectureTech3 || '').toUpperCase(); // M15
-    const lt4 = String(tvLive?.lectureTech4 || '').toUpperCase(); // H1
-    const sc3 = Number(tvLive?.scoreTech3 || 0);
-    const sc4 = Number(tvLive?.scoreTech4 || 0);
-    const hasIndicators = bridgeOk && (sc3 > 0 || sc4 > 0);
-
-    let momentum = 'neutre';
-    const posDir = String(pos?.direction || '').toUpperCase();
-    const isLong = posDir.includes('LONG') || posDir.includes('BUY');
-    if (!hasIndicators) {
-      momentum = 'données manquantes';
-    } else if (sc4 >= 70 && sc3 >= 65) {
-      momentum = 'fort';
-    } else if (sc4 >= 55 || sc3 >= 55) {
-      const h1Aligned = isLong ? lt4.includes('ACHAT') : lt4.includes('VENTE');
-      momentum = h1Aligned ? 'moyen' : 'ralentissement';
-    } else {
-      const h1Against = isLong ? lt4.includes('VENTE') : lt4.includes('ACHAT');
-      momentum = h1Against ? 'retournement possible' : 'neutre';
-    }
-
-    // Action suggestion
-    let action = 'HOLD', suggestion = 'Tenir la position — surveillance.', alertLevel = null;
-    if (pnlPips > 0 && progressPct >= 50) {
-      action = 'TRAIL_SL'; suggestion = 'Déplacer SL au-dessus du coût. Gains partiels sécurisés.'; alertLevel = 'attention';
-    }
-    if (pnlPips > 0 && progressPct >= 80) {
-      action = 'PARTIAL_TP'; suggestion = 'Objectif proche — sortie partielle recommandée.'; alertLevel = 'urgent';
-    }
-    if (momentum === 'retournement possible') {
-      action = 'SECURISER'; suggestion = 'Signal de retournement — sécuriser les gains ou sortir.'; alertLevel = 'urgent';
-    }
-
-    const details = [];
-    if (bridgeOk) {
-      if (sc4 > 0) details.push(`H1 score: ${sc4}% — ${lt4 || 'N/A'}`);
-      if (sc3 > 0) details.push(`M15 score: ${sc3}% — ${lt3 || 'N/A'}`);
-      if (tvLive?.bullRej) details.push('⚠ Rejet haussier structure');
-      if (tvLive?.bearRej) details.push('⚠ Rejet baissier structure');
-    }
-
-    res.json({
-      ok: true, sym, momentum, marketState: bridgeOk ? 'BRIDGE ACTIF' : 'BRIDGE HORS LIGNE',
-      suggestion, action, alertLevel, details, pnlPips: Math.abs(pnlPips), pnlSign,
-      progressPct: Math.min(100, progressPct), hasIndicators, rrLeft
-    });
-  } catch (e) {
-    res.json({ ok: false, error: e.message });
-  }
-});
+// ─── /coach/live-analysis — fusionné dans la route unique ligne ~1015 ────────────
 
 // ─── DEBUG BRIDGE — État brut du bridge TV pour un symbole ───────────────────
 app.get('/debug/bridge', (req, res) => {
