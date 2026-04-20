@@ -1,0 +1,740 @@
+﻿<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8"/>
+<title>Trading Auto</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&display=swap" rel="stylesheet">
+<style>
+/* ── TYPOGRAPHY & BASE ──────────── */
+* { box-sizing: border-box; }
+body { font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif; }
+
+/* ── SCROLLBAR CUSTOM ────────────── */
+::-webkit-scrollbar { width: 4px; }
+::-webkit-scrollbar-track { background: #0f172a; }
+::-webkit-scrollbar-thumb { background: #334155; border-radius: 2px; }
+
+/* ── BOUTONS UNIFIÉS ─────────────── */
+button, .btn {
+  transition: all 0.15s ease;
+  cursor: pointer;
+  border: none;
+  border-radius: 6px;
+  font-weight: 600;
+  letter-spacing: 0.5px;
+}
+button:active { transform: scale(0.97); }
+
+/* ── BADGE CONNEXION ─────────────── */
+#conn {
+  font-size: 10px;
+  padding: 2px 6px;
+  border-radius: 10px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+}
+
+/* ── PRIX HEADER ─────────────────── */
+#headPrice {
+  font-size: 22px !important;
+  font-weight: 800 !important;
+  letter-spacing: -0.5px;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ── CARDS TF — HOVER ────────────── */
+.tfc {
+  /* Transition uniquement sur border/bg/shadow — jamais sur layout */
+  transition: border-color .2s, background .2s, box-shadow .2s;
+  cursor: pointer;
+}
+.tfc:hover {
+  /* Pas de translateY — le hover ne déplace pas la carte */
+  box-shadow: 0 0 10px rgba(59,130,246,0.2);
+}
+
+/* ── COACH TEXT ──────────────────── */
+#coachText {
+  line-height: 1.8 !important;
+  font-size: 13px !important;
+  padding: 13px !important;
+  border-radius: 6px;
+  background: rgba(15,23,42,0.8);
+  color: #e2e8f0 !important;
+  white-space: pre-line;
+  min-height: 72px;        /* stabilise la hauteur — évite le reflow au changement de texte */
+  box-sizing: border-box;  /* padding inclus dans le min-height */
+  overflow: hidden;        /* empêche le débordement brusque */
+}
+#multiTFConsensus {
+  font-size: 13px !important;
+  font-weight: 700 !important;
+  color: #e2e8f0 !important;
+  letter-spacing: .02em;
+}
+#multiTFMessage {
+  font-size: 12px !important;
+  color: #cbd5e1 !important;
+}
+#liveIndicators {
+  font-size: 11px !important;
+}
+#tfBasisRow {
+  font-size: 11px !important;
+  line-height: 1.6 !important;
+}
+#newsTicker #tickerInner {
+  font-size: 12px !important;
+  color: #cbd5e1 !important;
+}
+
+/* ── NEWS ITEMS ──────────────────── */
+#newsListHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  cursor: pointer;
+  user-select: none;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.8px;
+  text-transform: uppercase;
+  color: #9fc4ea;
+  padding: 4px 0;
+  margin-top: 8px;
+  border-top: 1px solid #1e293b;
+}
+#newsListHeader span { font-size: 12px; color: #4a6fa8; transition: transform 0.2s; }
+#newsListHeader span.open { transform: rotate(180deg); }
+#newsListBody { overflow: hidden; max-height: 0; transition: max-height 0.3s ease; }
+#newsListBody.open { max-height: 350px; margin-top: 4px; }
+#newsList > div {
+  border-radius: 5px;
+  margin-bottom: 5px;
+  padding: 6px 8px;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+/* ── SÉPARATEURS ─────────────────── */
+.section-divider {
+  height: 1px;
+  background: linear-gradient(90deg, transparent, #1e293b, transparent);
+  margin: 8px 0;
+}
+
+/* ── PULSE ANALYSER ──────────────── */
+@keyframes pulse-orange {
+  0%, 100% { opacity: 1; box-shadow: 0 0 0 0 rgba(249,115,22,0.4); }
+  50% { opacity: 0.85; box-shadow: 0 0 0 6px rgba(249,115,22,0); }
+}
+.analyzing {
+  animation: pulse-orange 1s infinite !important;
+}
+
+/* ── ALERT BANNER SLIDE ───────────── */
+@keyframes slideDown {
+  from { transform: translateY(-100%); opacity: 0; }
+  to { transform: translateY(0); opacity: 1; }
+}
+#alertBanner[style*="block"] {
+  animation: slideDown 0.3s ease;
+}
+
+/* ── BIAIS BANNER ─────────────────── */
+#biasBanner {
+  transition: border-left-color 0.5s, background 0.5s;
+}
+
+/* ── POSITION PANEL ──────────────── */
+#positionPanel {
+  border-radius: 8px !important;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.05);
+}
+
+/* ── JOURNAL STATS ───────────────── */
+#journalStats {
+  border-top: 1px solid #1e293b;
+  padding-top: 4px;
+  margin-top: 4px;
+}
+
+/* ── COLOR SYSTEM VARIABLES ─────── */
+:root {
+  --col-long:    #22c55e;
+  --col-short:   #ef4444;
+  --col-pending: #f97316;
+  --col-wait:    #eab308;
+  --col-neutral: #64748b;
+}
+/* Utility classes */
+.sig-long    { color: var(--col-long);    }
+.sig-short   { color: var(--col-short);   }
+.sig-pending { color: var(--col-pending); }
+.sig-wait    { color: var(--col-wait);    }
+.sig-neutral { color: var(--col-neutral); }
+.bg-long     { background: rgba(34,197,94,0.12);  border-left: 3px solid var(--col-long);  }
+.bg-short    { background: rgba(239,68,68,0.12);  border-left: 3px solid var(--col-short); }
+.bg-pending  { background: rgba(249,115,22,0.12); border-left: 3px solid var(--col-pending); }
+@keyframes pulse-orange { 0%,100%{opacity:1} 50%{opacity:0.5} }
+.analyzing { animation: pulse-orange 1.2s infinite; background: var(--col-pending) !important; }
+@keyframes tickerScroll {
+  0%   { transform: translateX(0); }
+  100% { transform: translateX(-100%); }
+}
+/* ─────────────────────────────────── */
+*{box-sizing:border-box;margin:0;padding:0}
+html{width:360px;min-width:340px}
+body{font-family:'Inter','Segoe UI',sans-serif;font-size:12px;background:#0f1117;color:#e2e8f0;
+  display:flex;flex-direction:column;width:360px;min-width:340px;
+  height:598px;max-height:598px;overflow:hidden}
+body.win{width:100vw;min-width:unset;height:100vh;max-height:100vh}
+/* ── STICKY HEADER ─────────────── */
+#stickyHead{background:#161b27;border-bottom:1px solid #2d3748;padding:6px 10px;flex-shrink:0}
+.hrow{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+.ok-badge,.warn-badge,.bad-badge{font-size:10px;font-weight:700;padding:1px 6px;border-radius:4px}
+.ok-badge{background:rgba(22,163,74,.2);color:#86efac;border:1px solid rgba(22,163,74,.4)}
+.warn-badge{background:rgba(234,179,8,.2);color:#fde047;border:1px solid rgba(234,179,8,.4)}
+.bad-badge{background:rgba(239,68,68,.2);color:#fca5a5;border:1px solid rgba(239,68,68,.4)}
+.hsym{font-weight:800;font-size:13px;color:#f1f5f9}
+.htf,.hmode{font-size:10px;color:#94a3b8;padding:2px 5px;background:#1e2535;border-radius:4px}
+.hprice{font-size:12px;font-weight:600;color:#f1f5f9;margin-left:auto}
+#headAgent{font-size:10px;padding:2px 6px;border-radius:4px;border:1px solid #2d3748;color:#94a3b8}
+#btnDetach{margin-left:4px;background:#1e2535;border:1px solid #2d3748;color:#94a3b8;
+  font-size:11px;padding:2px 8px;border-radius:4px;cursor:pointer}
+#btnDetach:hover{background:#2d3748;color:#e2e8f0}
+/* ── STATUS DOTS (design BTC) ─── */
+.dot{width:7px;height:7px;border-radius:50%;background:#334155;flex-shrink:0;transition:background .3s}
+.dot.ok{background:#22c55e}.dot.warn{background:#eab308}.dot.bad{background:#ef4444}
+/* ── VOL PILL (design BTC) ──────── */
+.vol-pill{font-size:9px;font-weight:800;padding:1px 6px;border-radius:8px;letter-spacing:.06em}
+.vol-pill.LOW{background:rgba(34,197,94,.15);color:#86efac;border:1px solid rgba(34,197,94,.3)}
+.vol-pill.MED{background:rgba(234,179,8,.15);color:#fde047;border:1px solid rgba(234,179,8,.3)}
+.vol-pill.HIGH{background:rgba(239,68,68,.15);color:#fca5a5;border:1px solid rgba(239,68,68,.3)}
+/* ── BOTTOM ACTION BAR (design BTC) */
+#bottomBar{background:#161b27;border-top:1px solid #2d3748;padding:7px 10px;
+  display:flex;align-items:center;gap:6px;flex-shrink:0}
+#btnAnalyzeNow{flex:1;padding:9px 12px;border-radius:7px;border:none;
+  background:linear-gradient(135deg,#1d4ed8,#2563eb);color:#fff;
+  font-size:12px;font-weight:800;letter-spacing:.08em;cursor:pointer;transition:all .15s}
+#btnAnalyzeNow:hover{background:linear-gradient(135deg,#2563eb,#3b82f6);transform:translateY(-1px)}
+#btnAnalyzeNow:active{transform:scale(.97)}
+#btnAnalyzeNow.analyzing{background:linear-gradient(135deg,#ea580c,#f97316) !important;animation:pulse-orange 1s infinite}
+#btnAnalyzeNow:disabled{opacity:.45;cursor:not-allowed;transform:none}
+/* ── MODE BUTTONS (design BTC) ──── */
+.modes-row{display:flex;gap:4px}
+.mb{flex:1;padding:5px 4px;border-radius:5px;border:1px solid #2d3748;background:#1e2535;
+  color:#64748b;font-size:10px;font-weight:700;letter-spacing:.06em;cursor:pointer;
+  transition:all .15s;text-align:center}
+.mb:hover{border-color:#3b82f6;color:#e2e8f0}
+.mb.active{border-color:#2563eb;background:rgba(37,99,235,.2);color:#93c5fd}
+.mb.scalper.active{border-color:#f59e0b;background:rgba(245,158,11,.15);color:#fde047}
+.mb.sniper.active{border-color:#7c3aed;background:rgba(124,58,237,.2);color:#c4b5fd}
+.mb.swing.active{border-color:#10b981;background:rgba(16,185,129,.15);color:#6ee7b7}
+/* ── SCROLL AREA ────────────────── */
+#scrollArea{flex:1;overflow-y:auto;padding:8px 8px 30px;display:flex;flex-direction:column;gap:6px;min-height:0}
+#scrollArea::-webkit-scrollbar{width:4px}
+#scrollArea::-webkit-scrollbar-thumb{background:#2d3748;border-radius:2px}
+/* ── CONTROLS ───────────────────── */
+.ctrl-row{display:grid;grid-template-columns:2fr 1fr 1fr;gap:5px}
+.ctrl-row select{background:#1e2535;border:1px solid #2d3748;color:#e2e8f0;padding:4px 6px;
+  border-radius:5px;font-size:11px;cursor:pointer;outline:none}
+.ctrl-row select:focus{border-color:#3b82f6}
+/* ── BLOCS ──────────────────────── */
+.bloc{background:#1a1f2e;border:1px solid #2d3748;border-radius:8px;padding:10px}
+.bloc-title{font-size:10px;font-weight:700;color:#475569;letter-spacing:.08em;margin-bottom:6px;text-transform:uppercase}
+.bloc-title.toggle{cursor:pointer;display:flex;align-items:center;gap:6px;user-select:none}
+.bloc-title.toggle:hover{color:#94a3b8}
+/* ── SIGNAL ─────────────────────── */
+.sig-row{display:flex;align-items:center;gap:8px}
+.signal{font-size:12px;font-weight:800;letter-spacing:.02em}
+.signal.buy{color:var(--col-long)}.signal.sell{color:var(--col-short)}.signal.wait{color:var(--col-wait)}
+.sig-time{font-size:10px;color:#475569;margin-left:auto;font-family:monospace}
+.bdg{font-size:10px;padding:1px 6px;border-radius:4px;border:1px solid transparent}
+.bdg.ok{background:rgba(22,163,74,.15);color:#86efac;border-color:rgba(22,163,74,.3)}
+.bdg.warn{background:rgba(234,179,8,.15);color:#fde047;border-color:rgba(234,179,8,.3)}
+.bdg.bad{background:rgba(239,68,68,.15);color:#fca5a5;border-color:rgba(239,68,68,.3)}
+#analysisText{font-size:11px;color:#94a3b8;margin-top:5px;line-height:1.4}
+/* ── SECTION HEADER ─────────────── */
+.section-hdr{display:flex;align-items:center;gap:6px;margin:2px 0 4px;padding-bottom:4px;
+  border-bottom:1px solid #1e293b}
+.section-hdr-label{font-size:10px;font-weight:700;color:#475569;letter-spacing:.1em;
+  text-transform:uppercase}
+.section-hdr-line{flex:1;height:1px;background:linear-gradient(90deg,#1e293b,transparent)}
+/* ── MULTI-TF ───────────────────── */
+.tf-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:5px}
+/* Carte TF — taille strictement fixe, aucun reflow possible */
+.tfc{
+  background:#1a1f2e;border:1px solid #2d3748;border-radius:8px;
+  padding:7px 4px 5px;text-align:center;cursor:pointer;
+  transition:border-color .2s,background .2s,box-shadow .2s;
+  /* Dimensions fixes — le contenu ne fait JAMAIS bouger la carte */
+  height:72px;box-sizing:border-box;overflow:hidden;
+  /* Animations sur couche composite uniquement */
+  will-change:border-color,background,box-shadow;
+}
+.tfc:hover{border-color:#3b82f6;box-shadow:0 0 10px rgba(59,130,246,.18)}
+.tfc.active{border-color:#22c55e;background:rgba(22,163,74,.08)}
+/* Scanning : border+bg seulement — transform:scale() supprimé (causait le gonflement) */
+.tfc.scanning{border-color:#f97316;animation:tfc-pulse .6s ease-in-out infinite alternate}
+@keyframes tfc-pulse{from{background:rgba(249,115,22,.04);border-color:#f97316}to{background:rgba(249,115,22,.18);border-color:#fb923c}}
+/* Surveillance continue — pulse border discret */
+.tfc.monitoring{animation:tfc-monitor 2s ease-in-out infinite}
+@keyframes tfc-monitor{0%,100%{border-color:#334155;background:transparent}50%{border-color:#38bdf8;background:rgba(56,189,248,.05)}}
+/* Winner : glow box-shadow uniquement — scale() supprimé */
+.tfc.winner{border-color:#22c55e!important;background:rgba(34,197,94,.13)!important;animation:tfc-winner .8s ease-in-out 3;box-shadow:0 0 8px rgba(34,197,94,.35)}
+.tfc.winner-short{border-color:#ef4444!important;background:rgba(239,68,68,.13)!important;animation:tfc-winner-s .8s ease-in-out 3;box-shadow:0 0 8px rgba(239,68,68,.35)}
+.tfc.context-role{border-color:#3b82f6!important;background:rgba(59,130,246,.07)!important}
+.tfc.validation-role{border-color:#a855f7!important;background:rgba(168,85,247,.07)!important}
+@keyframes tfc-winner{0%,100%{box-shadow:0 0 6px rgba(34,197,94,.4)}50%{box-shadow:0 0 18px rgba(34,197,94,.85)}}
+@keyframes tfc-winner-s{0%,100%{box-shadow:0 0 6px rgba(239,68,68,.4)}50%{box-shadow:0 0 18px rgba(239,68,68,.85)}}
+/* Libellés — hauteur fixe, overflow caché, pas de wrap */
+.tfc-lbl{font-size:10px;color:#64748b;font-weight:700;letter-spacing:.06em;margin-bottom:3px;text-transform:uppercase;
+  height:12px;line-height:12px;overflow:hidden;white-space:nowrap}
+.tfc-role{font-size:8px;color:#475569;letter-spacing:.04em;margin-top:1px;font-weight:600;
+  height:10px;line-height:10px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+/* Signal principal — hauteur fixe, texte jamais plus grand que la carte */
+.tfc-sig{font-size:12px;font-weight:800;letter-spacing:.01em;
+  display:block;height:15px;line-height:15px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+.tfc-sig.buy{color:var(--col-long)}.tfc-sig.sell{color:var(--col-short)}
+.tfc-sig.wait{color:var(--col-wait)}.tfc-sig.scanning{color:#f97316}.tfc-sig.neutre{color:#64748b}
+/* Sous-label — hauteur fixe, ellipsis si trop long */
+.tfc-sub{font-size:9px;color:#64748b;margin-top:2px;font-family:monospace;letter-spacing:.02em;
+  height:12px;line-height:12px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+/* GAUGE LONG / SHORT séparées */
+.gauge-wrap{padding:6px 2px 2px;margin-top:2px}
+.gauge-dual{display:flex;gap:6px;margin-bottom:3px}
+.gauge-side{flex:1}
+.gauge-side-hdr{display:flex;justify-content:space-between;align-items:center;margin-bottom:2px}
+.gauge-side-lbl{font-size:10px;font-weight:800;letter-spacing:.07em}
+.gauge-side.long .gauge-side-lbl{color:#22c55e}
+.gauge-side.short .gauge-side-lbl{color:#ef4444}
+.gauge-side-pct{font-size:10px;font-weight:700;font-family:monospace}
+.gauge-side.long .gauge-side-pct{color:#22c55e}
+.gauge-side.short .gauge-side-pct{color:#ef4444}
+.gauge-side-bar{height:6px;background:#1e293b;border-radius:3px;overflow:hidden}
+.gauge-side-fill{height:100%;width:0%;border-radius:3px;transition:width .5s cubic-bezier(.4,0,.2,1)}
+.gauge-side.long .gauge-side-fill{background:#22c55e}
+.gauge-side.short .gauge-side-fill{background:#ef4444}
+.gauge-entry-soon .gauge-side-fill{animation:gauge-pulse 1s ease-in-out infinite}
+@keyframes gauge-pulse{0%,100%{opacity:1}50%{opacity:.45}}
+/* ── PROCHAINE OPPORTUNITÉ ──────── */
+#nextOppWrap{margin:4px 0 2px;padding:6px 8px 5px;background:#0d1b2e;border-radius:6px;border:1px solid #1e3a5f}
+#nextOppTitle{font-size:9px;font-weight:800;color:#475569;letter-spacing:.08em;text-transform:uppercase;margin-bottom:4px;display:flex;justify-content:space-between;align-items:center}
+#nextOppTitle span{font-size:9px;font-weight:700;font-family:monospace;color:#64748b}
+.nopp-bar-wrap{height:5px;background:#1e293b;border-radius:3px;overflow:hidden;margin:3px 0 2px}
+.nopp-bar-fill{height:100%;border-radius:3px;transition:width 1.2s cubic-bezier(.4,0,.2,1);background:linear-gradient(90deg,#1d4ed8,#38bdf8)}
+.nopp-bar-fill.close{background:linear-gradient(90deg,#15803d,#22c55e);animation:nopp-pulse .8s ease-in-out infinite}
+@keyframes nopp-pulse{0%,100%{opacity:1}50%{opacity:.5}}
+#nextOppStatus{font-size:10px;color:#64748b;font-family:monospace;margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#nextOppEta{font-size:9px;color:#475569;font-family:monospace;margin-top:1px}
+/* ── DECISION ───────────────────── */
+.verdict{display:inline-block;font-size:18px;font-weight:800;letter-spacing:.02em}
+.verdict.buy{color:var(--col-long)}.verdict.sell{color:var(--col-short)}.verdict.wait{color:var(--col-wait)}
+.tags-row{display:flex;gap:5px;margin:5px 0}
+.tag{font-size:10px;padding:2px 8px;border-radius:12px;font-weight:700;letter-spacing:.03em}
+.tag.ok{background:rgba(22,163,74,.2);color:#86efac}
+.tag.warn{background:rgba(234,179,8,.2);color:#fde047}
+.tag.bad{background:rgba(239,68,68,.2);color:#fca5a5}
+.tag.blue{background:rgba(59,130,246,.2);color:#93c5fd}
+#dg-reason{margin-top:8px;padding:10px 12px;border-radius:6px;font-size:12px;
+  line-height:1.6;border-left:3px solid #3b82f6;background:rgba(59,130,246,.07);color:#e2e8f0}
+#dg-reason.buy{border-left-color:#22c55e;background:rgba(22,163,74,.10);color:#dcfce7}
+#dg-reason.sell{border-left-color:#ef4444;background:rgba(239,68,68,.12);color:#fff1f2}
+#dg-reason.bad{border-left-color:#ef4444;background:rgba(239,68,68,.15);color:#ffffff;font-weight:700}
+#dg-reason.warn{border-left-color:#d97706;background:rgba(234,179,8,.12);color:#fde047;font-weight:600}
+#dg-nextaction{margin-top:6px;font-size:12px;color:#94a3b8;line-height:1.5}
+/* ── ACTIONS ────────────────────── */
+.acts-grid{display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:8px}
+.btn-sub{padding:8px 5px;border-radius:6px;border:1px solid #2d3748;background:#1e2535;
+  color:#e2e8f0;font-size:11px;font-weight:700;cursor:pointer;transition:all .15s;letter-spacing:.04em}
+.btn-sub:hover{background:#2d3748;border-color:#3b82f6}
+.btn-sub.buy{border-color:rgba(22,163,74,.5);background:rgba(22,163,74,.12);color:#86efac}
+.btn-sub.buy:hover{background:rgba(22,163,74,.25)}
+.btn-sub.sell{border-color:rgba(239,68,68,.5);background:rgba(239,68,68,.12);color:#fca5a5}
+.btn-sub.sell:hover{background:rgba(239,68,68,.25)}
+/* ── STATS ──────────────────────── */
+.stats-row{display:flex;gap:5px;align-items:center}
+.sc{flex:1;background:#1a1f2e;border:1px solid #2d3748;border-radius:6px;padding:6px;text-align:center}
+.sc-val{display:block;font-size:14px;font-weight:700;color:#f1f5f9}
+.sc-lbl{display:block;font-size:10px;color:#64748b;margin-top:1px;letter-spacing:.04em;font-weight:600;text-transform:uppercase}
+#statLastEvent{font-size:10px;color:#64748b;flex:2;text-align:right;padding:0 4px}
+/* ── DIAGNOSTIC ─────────────────── */
+#diagLine{font-size:10px;color:#94a3b8;padding:4px 8px;background:#1a1f2e;
+  border-radius:4px;border:1px solid #2d3748;line-height:1.4}
+#diagLine.blocking{color:#fca5a5;background:rgba(239,68,68,.08);border-color:rgba(239,68,68,.3)}
+/* ── CHART ──────────────────────── */
+.chart-body{margin-top:4px}
+.chart-body.hidden{display:none}
+#chart-container{height:220px;width:100%;background:#0d1117;border-radius:4px;overflow:hidden;position:relative}
+#tv-chart-iframe{width:100%;height:220px;border:none;border-radius:4px;display:block}
+#chart-msg{font-size:10px;color:#94a3b8;padding:4px 0}
+/* ── COACH ──────────────────────── */
+#coachText{font-size:12px;color:#cbd5e1;line-height:1.6;margin-bottom:6px;font-weight:500;white-space:pre-line;transition:color 0.4s ease,background 0.4s ease}
+.ni{font-size:12px;color:#94a3b8;padding:4px 0;border-top:1px solid #2d3748;display:block}
+.ni-head{display:flex;align-items:center;gap:4px;margin-bottom:2px}
+.ni-title{font-size:12px;color:#cbd5e1;font-weight:700;margin-bottom:2px}
+.ni-foot{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+.ns{color:var(--col-wait);letter-spacing:-1px;font-size:10px}
+.nco{font-size:11px;background:rgba(59,130,246,.15);color:#93c5fd;border-radius:4px;padding:1px 4px;font-weight:700}
+.ntime{font-size:11px;color:#94a3b8}
+.nt{font-size:10px;padding:1px 5px;border-radius:8px;font-weight:700;background:rgba(100,116,139,.2);color:#94a3b8}
+.nt-now{background:rgba(239,68,68,.2);color:#fca5a5;animation:pulse .9s infinite}
+.nt-soon{background:rgba(234,179,8,.15);color:#fde047}
+.nt-past{background:rgba(100,116,139,.12);color:#94a3b8}
+.nb{font-size:10px;padding:1px 5px;border-radius:8px;font-weight:700}
+.nb-bull{background:rgba(34,197,94,.15);color:#86efac}
+.nb-bear{background:rgba(239,68,68,.15);color:#fca5a5}
+.nb-neu{background:rgba(100,116,139,.2);color:#94a3b8}
+.nav{font-size:10px;padding:1px 5px;border-radius:8px;background:rgba(100,116,139,.15);color:#94a3b8}
+.nav-good{background:rgba(34,197,94,.15);color:#86efac}
+.nav-bad{background:rgba(239,68,68,.15);color:#fca5a5}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.5}}
+.urg{font-size:10px;padding:1px 5px;border-radius:10px;font-weight:700;letter-spacing:.04em}
+.ul{background:rgba(100,116,139,.2);color:#94a3b8}
+.um{background:rgba(234,179,8,.15);color:#fde047}
+.uh{background:rgba(249,115,22,.15);color:#fdba74}
+.ux{background:rgba(239,68,68,.2);color:#fca5a5}
+/* ── WINDOW ACTIONS ─────────────── */
+#windowActions{display:flex;gap:5px}
+#windowActions button{flex:1;padding:5px;border-radius:5px;border:1px solid #2d3748;
+  background:#1e2535;color:#e2e8f0;font-size:11px;font-weight:600;cursor:pointer}
+#windowActions button:hover{background:#2d3748}
+</style>
+</head>
+<body>
+<!-- ALERT BANNER -->
+<div id="alertBanner" style="display:none;padding:7px 12px;text-align:center;font-weight:700;font-size:12px;letter-spacing:1px;text-transform:uppercase;cursor:pointer;flex-shrink:0">
+  <span id="alertText"></span>
+</div>
+<!-- STICKY HEADER -->
+<div id="stickyHead">
+  <div id="bridgeHealth" style="display:flex;gap:4px;align-items:center;padding:3px 6px;background:#0f172a;border-radius:4px;margin-bottom:4px">
+    <span id="bh-tv"  title="TradingView" style="width:7px;height:7px;border-radius:50%;background:#334155;transition:background 0.3s"></span>
+    <span id="bh-srv" title="Backend"     style="width:7px;height:7px;border-radius:50%;background:#334155;transition:background 0.3s"></span>
+    <span id="bh-sse" title="SSE"         style="width:7px;height:7px;border-radius:50%;background:#334155;transition:background 0.3s"></span>
+    <span id="bh-label" style="font-size:9px;color:#64748b;margin-left:3px">--</span>
+  </div>
+  <div class="hrow">
+    <!-- Status dots (design BTC) -->
+    <div class="dot warn" id="dot-srv" title="Serveur"></div>
+    <div class="dot warn" id="dot-ext" title="Extension TV"></div>
+    <span id="conn" class="warn-badge" style="display:none">SYNC</span>
+    <span id="headSym" class="hsym">XAUUSD</span>
+    <span id="headTF" class="htf">H1</span>
+    <span id="headMode" class="hmode">AUTO</span>
+    <span id="headPrice" class="hprice"></span>
+    <div id="recalage-ext-row" style="display:none;align-items:center;justify-content:flex-end;gap:5px;margin-top:2px;font-size:9px;line-height:1.3">
+      <span style="color:#64748b;font-size:8.5px">TV</span>
+      <span id="recalage-ext-tv" style="font-variant-numeric:tabular-nums;background:#14532d;color:#4ade80;padding:1px 5px;border-radius:3px;font-weight:700;font-size:9px">—</span>
+      <span id="recalage-ext-name" style="color:#64748b;font-size:8.5px"></span>
+      <span id="recalage-ext-plat" style="font-variant-numeric:tabular-nums;background:#1e3a5f;color:#93c5fd;padding:1px 5px;border-radius:3px;font-weight:700;font-size:9px">—</span>
+    </div>
+    <span id="marketSession" class="vol-pill LOW" style="margin-left:2px">--</span>
+    <span id="headAgent" style="font-size:10px;padding:2px 6px;border-radius:4px;border:1px solid #2d3748;color:#64748b;margin-left:auto">AGENT --</span>
+    <button id="btnDetach" title="Ouvrir fenetre">&#128204;</button>
+  </div>
+  <div id="biasBanner" style="display:none;align-items:center;justify-content:space-between;padding:4px 10px;margin:4px 0 0;border-radius:4px;background:#1e293b;font-size:11px;transition:background 0.3s">
+    <span id="biasLabel" style="font-weight:700;letter-spacing:1px;text-transform:uppercase">--</span>
+    <div style="flex:1;height:4px;margin:0 8px;background:#0f172a;border-radius:2px;overflow:hidden">
+      <div id="biasBar" style="height:100%;width:0%;transition:width 0.5s,background 0.3s;border-radius:2px"></div>
+    </div>
+    <span id="biasStrength" style="color:#94a3b8;font-size:10px">0%</span>
+  </div>
+</div>
+<!-- SCROLL AREA -->
+<div id="scrollArea">
+  <!-- CONTROLS -->
+  <div class="ctrl-row">
+    <select id="symbolSelect">
+      <option value="XAUUSD">XAUUSD</option>
+      <option value="EURUSD">EURUSD</option>
+      <option value="GBPUSD">GBPUSD</option>
+      <option value="USDJPY">USDJPY</option>
+      <option value="USDCHF">USDCHF</option>
+      <option value="AUDUSD">AUDUSD</option>
+      <option value="NZDUSD">NZDUSD</option>
+      <option value="USDCAD">USDCAD</option>
+      <option value="BTCUSD">BTCUSD</option>
+      <option value="ETHUSD">ETHUSD</option>
+      <option value="XAGUSD">XAGUSD</option>
+      <option value="US30">US30</option>
+      <option value="NAS100">NAS100</option>
+      <option value="SPX500">SPX500</option>
+      <option value="GBPJPY">GBPJPY</option>
+      <option value="EURJPY">EURJPY</option>
+    </select>
+    <select id="tfSelect">
+      <option value="M1">M1</option>
+      <option value="M5">M5</option>
+      <option value="M15">M15</option>
+      <option value="M30">M30</option>
+      <option value="H1" selected>H1</option>
+      <option value="H4">H4</option>
+      <option value="D1">D1</option>
+      <option value="W1">W1</option>
+    </select>
+    <select id="modeSelect">
+      <option value="AUTO" selected>AUTO</option>
+      <option value="SCALPER">SCALP</option>
+      <option value="SNIPER">SNIPER</option>
+      <option value="SWING">SWING</option>
+    </select>
+  </div>
+
+  <!-- SIGNAL LIVE -->
+  <div class="bloc">
+    <div class="sig-row">
+      <span id="signalText" class="signal wait">ATTENTE</span>
+      <span id="webhookBadge" class="bdg warn">WH --</span>
+      <span id="bridgeBadge" class="bdg warn">BRIDGE --</span>
+      <span id="sigTime" class="sig-time">--:--</span>
+    </div>
+    <div id="analysisText">Analyse en cours...</div>
+  </div>
+
+  <!-- ALERTES & ENTRÉE — blocs de décision anticipée (pré-alerte, futur trade, armé) -->
+  <div id="alertsZone" style="margin-bottom:2px">
+    <!-- PRÉ-SIGNAL: signal en formation AVANT confirmation — anticiper l'entrée -->
+    <div id="preSignalBanner" style="display:none;font-size:11px;font-weight:600;padding:5px 9px;border-radius:4px;border:1px solid;margin-bottom:4px;letter-spacing:.02em;line-height:1.5"></div>
+    <!-- SCÉNARIO FUTURE ENTRÉE: état du prochain trade (visible sans ARM, masqué quand armé) -->
+    <div id="futureEntryBanner" style="display:none;font-size:10.5px;font-weight:700;padding:5px 9px;border-radius:5px 5px 0 0;border-left:3px solid;border-top:1px solid;border-right:1px solid;border-bottom:none;margin-bottom:0;letter-spacing:.02em;line-height:1.4"></div>
+    <!-- NIVEAUX PRÉ-ENTRÉE: entrée/SL/TP estimés avant déclenchement (masqué quand armé ou position active) -->
+    <div id="preEntryLevels" style="display:none;font-size:12px;font-weight:700;padding:7px 11px 7px 11px;border-radius:0 0 5px 5px;border-left:3px solid;border-bottom:1px solid;border-right:1px solid;margin-bottom:4px;font-family:monospace;letter-spacing:.02em;line-height:1.8;color:#f1f5f9;white-space:pre-line"></div>
+    <!-- ROBOT ARMÉ: affiché quand l'utilisateur appuie sur ENTRER — prend le dessus sur futureEntryBanner -->
+    <div id="armedBanner" style="display:none;font-size:13px;font-weight:700;padding:8px 12px;border-radius:5px;border:2px solid;margin-bottom:4px;letter-spacing:.02em;text-align:left;line-height:1.7;font-variant-numeric:tabular-nums"></div>
+    <!-- PROPOSITION SETUP — LIA propose un setup, l'utilisateur valide ou refuse avant entrée -->
+    <div id="setupProposalBanner" style="display:none;padding:10px 12px;border-radius:7px;border:2px solid;margin-bottom:5px;line-height:1.6;font-family:'Inter','Segoe UI',sans-serif"></div>
+  </div>
+
+  <!-- RETOURNEMENT LIA — contexte marché avant la décision agent (lecture + opportunité) -->
+  <div id="reversalBanner" style="display:none;padding:10px 12px;border-radius:6px;border:2px solid;margin-bottom:6px;line-height:1.5;font-family:'Inter','Segoe UI',sans-serif"></div>
+
+  <!-- DECISION AGENT — juste après signal/alertes pour accès immédiat aux actions -->
+  <div class="section-hdr" style="margin-top:2px"><span class="section-hdr-label">Décision agent</span><span class="section-hdr-line"></span></div>
+  <div class="bloc">
+    <div class="bloc-title" style="display:flex;align-items:center;justify-content:space-between">
+      <span>&#129302; DECISION AGENT</span>
+      <span id="dg-mode-badge" style="font-size:10px;color:#475569"></span>
+    </div>
+    <div>
+      <span id="dg-verdict" class="verdict wait">ATTENTE</span>
+      <span class="tags-row" style="display:inline-flex;margin-left:8px;vertical-align:middle">
+        <span id="dg-risk" class="tag warn">--</span>
+        <span id="dg-anticip" class="tag blue">--</span>
+      </span>
+    </div>
+    <div id="dg-reason">Raison : analyse en cours...</div>
+    <div id="dg-nextaction"></div>
+    <div class="acts-grid" style="margin-top:6px">
+      <button class="btn-sub buy" data-action="ENTER">&#9654; ENTRER</button>
+      <button class="btn-sub sell" data-action="EXIT">&#9632; SORTIR</button>
+      <button class="btn-sub" data-action="BE">&#9650; BREAKEVEN</button>
+      <button class="btn-sub" data-action="WAIT">&#9889; PATIENTER</button>
+    </div>
+    <div style="display:flex;gap:6px;margin-top:6px">
+      <button id="btnMute" class="btn-sub" style="background:#1e293b;color:#64748b;flex:0 0 58px;min-width:58px">&#128266; SON</button>
+      <button id="btnAnalyzeNow" class="btn-sub" style="flex:1">ANALYSER</button>
+    </div>
+  </div>
+
+  <!-- BANNIÈRE ENTRÉE FLASH — visible 10s après chaque nouvelle entrée -->
+  <div id="entryFlashBanner" style="display:none;padding:10px 12px;border-radius:6px;margin-bottom:4px;border:2px solid;text-align:center;font-weight:800;font-size:13px;letter-spacing:.04em;line-height:1.6;animation:none"></div>
+
+  <!-- POSITION PANEL -->
+  <div id="positionPanel" style="display:none;padding:8px 10px;background:#0f172a;border-radius:6px;margin-bottom:4px;border:1px solid #334155">
+    <!-- En-tête: direction | TF source | statut | P&L -->
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:2px">
+      <span id="posDir" style="font-weight:800;font-size:16px;text-transform:uppercase;letter-spacing:1.5px">LONG</span>
+      <span id="posMode" style="font-size:10px;font-weight:800;padding:2px 8px;border-radius:3px;letter-spacing:1px;display:none"></span>
+      <span id="posSetupTf" style="font-size:10px;font-weight:700;padding:2px 7px;border-radius:3px;background:rgba(59,130,246,0.2);color:#60a5fa;letter-spacing:0.8px;display:none">M15</span>
+      <span id="posStatus" style="font-size:10px;font-weight:700;padding:2px 6px;border-radius:3px;background:rgba(249,115,22,0.15);color:#f97316;letter-spacing:0.8px">ACTIF</span>
+      <span id="posPnl" style="font-size:14px;font-weight:700">+0.0 pips</span>
+    </div>
+    <!-- Barre SL → Entry → TP -->
+    <div style="position:relative;height:8px;background:#1e293b;border-radius:4px;margin:5px 0">
+      <div id="posSlZone" style="position:absolute;left:0;height:100%;background:rgba(239,68,68,0.3);border-radius:4px 0 0 4px"></div>
+      <div id="posTpZone" style="position:absolute;right:0;height:100%;background:rgba(34,197,94,0.3);border-radius:0 4px 4px 0"></div>
+      <div id="posPriceDot" style="position:absolute;top:-4px;width:16px;height:16px;border-radius:50%;background:#f97316;transform:translateX(-50%);transition:left 0.5s;box-shadow:0 0 5px rgba(249,115,22,0.8)"></div>
+    </div>
+    <!-- Niveaux -->
+    <div style="display:flex;justify-content:space-between;align-items:baseline;font-size:13px;margin-top:6px;font-weight:800;letter-spacing:.03em;font-variant-numeric:tabular-nums">
+      <span id="posSlLbl" style="color:#fca5a5;font-size:12px">SL --</span>
+      <span id="posEntryLbl" style="color:#fdba74;font-size:15px;letter-spacing:.04em">Entrée --</span>
+      <span id="posTpLbl" style="color:#86efac;font-size:12px">TP --</span>
+    </div>
+    <!-- Niveaux plateforme (recalage) — masqués si recalage inactif -->
+    <div id="posExtPlatRow" style="display:none;justify-content:space-between;font-size:11px;margin-top:3px;font-weight:700;font-variant-numeric:tabular-nums">
+      <span id="posSlPlatExt" style="background:#1e3a5f;color:#93c5fd;padding:2px 6px;border-radius:3px">--</span>
+      <span id="posEntryPlatExt" style="background:#1e3a5f;color:#93c5fd;padding:2px 6px;border-radius:3px">--</span>
+      <span id="posTpPlatExt" style="background:#1e3a5f;color:#93c5fd;padding:2px 6px;border-radius:3px">--</span>
+    </div>
+    <div style="display:flex;justify-content:space-between;font-size:11px;margin-top:4px;font-variant-numeric:tabular-nums">
+      <span id="posDistSl" style="color:#fca5a5;font-weight:700">← SL -- pips</span>
+      <span id="posRr" style="color:#cbd5e1;font-weight:800;font-size:12px">R:R --</span>
+      <span id="posDistTp" style="color:#86efac;font-weight:700">-- pips TP →</span>
+    </div>
+    <!-- Indicateurs TF au moment de l'entrée -->
+    <div id="posEntryIndicators" style="display:none;margin-top:5px;padding:4px 7px;background:rgba(59,130,246,0.07);border-left:2px solid #3b82f6;border-radius:0 3px 3px 0;font-size:11px;color:#93c5fd;font-weight:600;font-family:monospace;line-height:1.6"></div>
+    <div id="posBeAdviceExt" style="display:none;margin-top:5px;padding:5px 7px;background:rgba(34,197,94,0.12);border-left:2px solid #22c55e;border-radius:0 3px 3px 0;font-size:11px;color:#22c55e;font-weight:600"></div>
+    <div id="posTpAdviceExt" style="display:none;margin-top:4px;padding:5px 7px;background:rgba(249,115,22,0.12);border-left:2px solid #f97316;border-radius:0 3px 3px 0;font-size:11px;color:#f97316;font-weight:600"></div>
+  </div>
+
+  <!-- BRIDGE STALE ALERT — visible uniquement quand TV bridge est coupé -->
+  <div id="bridgeStaleAlert" style="display:none;padding:7px 10px;border-radius:5px;background:rgba(239,68,68,0.12);border:1px solid #ef4444;color:#ef4444;font-size:11px;font-weight:700;margin-bottom:5px;animation:pulse-orange .8s ease-in-out infinite alternate">
+    ⚡ BRIDGE TV COUPÉ — Prix non fiables. Ouvrez TradingView et attendez la reconnexion.
+    <span id="bridgeStaleAge" style="font-weight:400;opacity:.8"></span>
+  </div>
+
+  <!-- MULTI-TF -->
+  <div class="section-hdr" style="margin-top:2px"><span class="section-hdr-label">Analyse multi-temps</span><span class="section-hdr-line"></span></div>
+  <!-- Scan progress bar — visible uniquement pendant l'analyse -->
+  <div id="tfScanProgress" style="display:none;margin-bottom:5px">
+    <div style="display:flex;justify-content:space-between;font-size:9px;color:#475569;margin-bottom:2px;font-weight:700;letter-spacing:.06em">
+      <span id="tfScanLabel">🔍 SCAN EN COURS...</span>
+      <span id="tfScanCount">0/0</span>
+    </div>
+    <div style="height:3px;border-radius:2px;background:#1e293b;overflow:hidden">
+      <div id="tfScanBar" style="height:100%;width:0%;background:linear-gradient(90deg,#f97316,#eab308);border-radius:2px;transition:width .3s ease"></div>
+    </div>
+  </div>
+  <div class="tf-grid">
+    <div class="tfc" id="tfc-M1" data-tfc="M1">
+      <div class="tfc-lbl">M1</div>
+      <div class="tfc-sig wait" id="tfc-M1-t">--</div>
+      <div class="tfc-sub" id="tfc-M1-s">RSI --</div>
+      <div class="tfc-role" id="tfc-M1-role"></div>
+    </div>
+    <div class="tfc" id="tfc-M5" data-tfc="M5">
+      <div class="tfc-lbl">M5</div>
+      <div class="tfc-sig wait" id="tfc-M5-t">--</div>
+      <div class="tfc-sub" id="tfc-M5-s">RSI --</div>
+      <div class="tfc-role" id="tfc-M5-role"></div>
+    </div>
+    <div class="tfc" id="tfc-M15" data-tfc="M15">
+      <div class="tfc-lbl">M15</div>
+      <div class="tfc-sig wait" id="tfc-M15-t">--</div>
+      <div class="tfc-sub" id="tfc-M15-s">RSI --</div>
+      <div class="tfc-role" id="tfc-M15-role"></div>
+    </div>
+<div class="tfc" id="tfc-H1" data-tfc="H1">
+      <div class="tfc-lbl">H1</div>
+      <div class="tfc-sig wait" id="tfc-H1-t">--</div>
+      <div class="tfc-sub" id="tfc-H1-s">RSI --</div>
+      <div class="tfc-role" id="tfc-H1-role"></div>
+    </div>
+    <div class="tfc" id="tfc-H4" data-tfc="H4">
+      <div class="tfc-lbl">H4</div>
+      <div class="tfc-sig wait" id="tfc-H4-t">--</div>
+      <div class="tfc-sub" id="tfc-H4-s">RSI --</div>
+      <div class="tfc-role" id="tfc-H4-role"></div>
+    </div>
+    <div class="tfc" id="tfc-D1" data-tfc="D1">
+      <div class="tfc-lbl">D1</div>
+      <div class="tfc-sig wait" id="tfc-D1-t">--</div>
+      <div class="tfc-sub" id="tfc-D1-s">RSI --</div>
+      <div class="tfc-role" id="tfc-D1-role"></div>
+    </div>
+  </div>
+  <!-- GAUGE BIAIS LONG / SHORT séparées -->
+  <div class="gauge-wrap" id="gaugeDualWrap">
+    <div class="gauge-dual">
+      <div class="gauge-side long" id="gaugeSideLong">
+        <div class="gauge-side-hdr">
+          <span class="gauge-side-lbl">▲ HAUSSIER</span>
+          <span class="gauge-side-pct" id="gaugeLongPct">0%</span>
+        </div>
+        <div class="gauge-side-bar"><div class="gauge-side-fill" id="gaugeLong" style="width:0%"></div></div>
+      </div>
+      <div class="gauge-side short" id="gaugeSideShort">
+        <div class="gauge-side-hdr">
+          <span class="gauge-side-lbl">▼ BAISSIER</span>
+          <span class="gauge-side-pct" id="gaugeShortPct">0%</span>
+        </div>
+        <div class="gauge-side-bar"><div class="gauge-side-fill" id="gaugeShort" style="width:0%"></div></div>
+      </div>
+    </div>
+    <div style="text-align:center;margin-top:2px">
+      <span id="gaugeLabel" style="color:#94a3b8;font-weight:700;font-size:10px;letter-spacing:.04em">NEUTRE</span>
+    </div>
+  </div>
+
+  <!-- STATS ROBOT (depuis /stats serveur — TP gagnants / SL perdants / winrate) -->
+  <div class="stats-row">
+    <div class="sc"><span class="sc-val" id="statSignals" style="color:#22c55e">--</span><span class="sc-lbl">✅ TP</span></div>
+    <div class="sc"><span class="sc-val" id="statTrades" style="color:#ef4444">--</span><span class="sc-lbl">❌ SL</span></div>
+    <div class="sc"><span class="sc-val" id="statRate" style="color:#93c5fd">--</span><span class="sc-lbl">% WIN</span></div>
+    <div id="statLastEvent" style="font-size:10px;color:#475569;margin-top:2px">-- trades</div>
+  </div>
+  <div id="journalStats" style="text-align:center;padding:2px 0"></div>
+  <div style="text-align:center;padding:2px 0">
+    <button id="btnResetStats" style="background:#1e293b;border:1px solid #334155;color:#64748b;font-size:9px;padding:2px 8px;border-radius:3px;cursor:pointer" title="Remettre stats à zéro">🗑️ Reset stats</button>
+  </div>
+  <!-- PROCHAINE OPPORTUNITÉ — jauge temps avant prochain setup probable -->
+  <div id="nextOppWrap">
+    <div id="nextOppTitle">⏱ PROCHAINE OPPORTUNITÉ <span id="nextOppEta">—</span></div>
+    <div class="nopp-bar-wrap"><div class="nopp-bar-fill" id="nextOppBar" style="width:0%"></div></div>
+    <div id="nextOppStatus">Analyse en cours...</div>
+  </div>
+
+  <!-- DIAGNOSTIC -->
+  <div id="diagLine">Diagnostic : initialisation...</div>
+
+  <!-- GRAPHIQUE TRADINGVIEW LIVE -->
+  <div class="bloc">
+    <div class="bloc-title toggle" id="toggleChart">&#128200; GRAPHIQUE LIVE &#9654;</div>
+    <div id="chartBody" class="chart-body hidden">
+      <div id="chart-container">
+        <iframe id="tv-chart-iframe" src="" allowtransparency="true" frameborder="0" scrolling="no"></iframe>
+      </div>
+      <div id="chart-msg" style="font-size:10px;color:#94a3b8;padding:2px 0;text-align:right">TradingView Live</div>
+    </div>
+  </div>
+
+  <!-- COACH LIA -->
+  <div class="section-hdr" style="margin-top:2px"><span class="section-hdr-label">Coach LIA</span><span class="section-hdr-line"></span></div>
+  <div class="bloc">
+    <div class="bloc-title" style="display:flex;justify-content:space-between;align-items:center">
+      <span>&#128172; COACH LIA</span>
+      <span id="priceStatus" style="font-size:10px;color:#64748b"></span>
+    </div>
+    <!-- Indicateurs live — visibles uniquement quand remplis par le JS -->
+    <div id="liveIndicators" style="display:none;font-size:10px;color:#94a3b8;font-family:monospace;margin-bottom:3px"></div>
+    <!-- TF BASIS — visible uniquement sur signal directionnel -->
+    <div id="tfBasisRow" style="display:none;font-size:10px;font-family:monospace;padding:3px 6px;margin-bottom:3px;background:#0a1628;border-radius:4px;border-left:2px solid #3b82f6;line-height:1.5;color:#cbd5e1;transition:border-left-color 0.4s ease"></div>
+    <!-- Consensus multi-TF — visible uniquement quand rempli -->
+    <div id="multiTFConsensus" style="display:none;font-size:10px;color:#cbd5e1;margin-bottom:2px;font-family:monospace"></div>
+    <div id="multiTFMessage" style="display:none;font-size:10px;color:#94a3b8;margin-bottom:4px;transition:color 0.3s ease"></div>
+    <!-- BRIDGE INTELLIGENCE — état temps réel du bridge Pine Script (zone/score/rejets/macro) -->
+    <div id="bridgeIntelRow" style="display:none;font-size:10px;font-family:monospace;padding:3px 6px;margin-bottom:3px;background:#0a1628;border-radius:4px;border-left:2px solid #3b82f6;line-height:1.6;color:#94a3b8"></div>
+    <!-- ALERTE PRÉCOCE SL — visible uniquement sur position active -->
+    <div id="slWarningBanner" style="display:none;font-size:11px;font-weight:700;padding:5px 8px;border-radius:5px;border:1px solid #f97316;background:#2a1500;color:#f97316;margin-bottom:5px"></div>
+    <div id="coachText">Coach indisponible.</div>
+    <div id="newsListHeader">
+      <span>&#128248; Événements à surveiller</span>
+      <span id="newsExtIcon" class="open">▼</span>
+    </div>
+    <div id="newsListBody">
+      <div id="newsList"></div>
+    </div>
+  </div>
+
+  <!-- WINDOW ACTIONS (persistent mode) -->
+  <div id="windowActions" hidden>
+    <button id="focusTradingViewBtn">&#127760; TradingView</button>
+    <button id="closeWindowBtn">&#10005; Fermer</button>
+  </div>
+</div>
+
+<div id="newsTicker" style="position:fixed;bottom:0;left:0;right:0;background:#0f172a;border-top:1px solid #1e293b;padding:4px 0;overflow:hidden;height:22px;z-index:100">
+  <div id="tickerInner" style="display:inline-block;white-space:nowrap;animation:tickerScroll 30s linear infinite;font-size:11px;color:#94a3b8;padding-left:100%">
+    Chargement des news...
+  </div>
+</div>
+
+<script src="lightweight-charts.min.js"></script>
+<script src="chart-module.js"></script>
+<script src="popup.js"></script>
+</body>
+</html>

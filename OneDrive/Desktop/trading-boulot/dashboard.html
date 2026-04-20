@@ -35,6 +35,8 @@
     .topbar .links{display:flex;gap:8px;flex-wrap:wrap}
     .btn-link{border:1px solid #2b4767;color:#b9cbe2;background:rgba(14,31,53,0.9);padding:6px 11px;font-size:11px;border-radius:6px;font-weight:700;cursor:pointer}
     .btn-link:hover{border-color:#3b82f6;background:#0f2d52}
+    .btn-link-logs{border-color:#a78bfa!important;color:#c4b5fd!important}
+    .btn-link-tests{border-color:#f97316!important;color:#fed7aa!important}
 
     /* ── STATUS BAR ── */
     .statusbar{display:flex;align-items:center;gap:12px;padding:6px 12px;background:#0f1e30;border:1px solid var(--border);border-radius:8px;margin-bottom:14px;flex-wrap:wrap;font-size:12px}
@@ -110,11 +112,15 @@
     #btnEntrer:hover{background:linear-gradient(135deg,#4ade80,#22c55e)}
     #btnEntrer:disabled{background:#1e3a1e;color:#4b7c4b;cursor:not-allowed;opacity:0.6}
     #btnEntrer.armed{background:linear-gradient(135deg,#f97316,#ea580c)!important;animation:pulse-o 1.2s infinite;color:#fff!important;opacity:1!important;cursor:pointer!important}
+    #btnBe{background:linear-gradient(135deg,#f59e0b,#d97706);color:#fff}
+    #btnBe:disabled{background:#2a1f00;color:#856c2a;cursor:not-allowed;opacity:0.5}
+    #btnPartialTp{background:linear-gradient(135deg,#22c55e,#16a34a);color:#fff}
+    #btnPartialTp:disabled{background:#1a2e1a;color:#4b7c4b;cursor:not-allowed;opacity:0.5}
     #btnExit{background:linear-gradient(135deg,#ef4444,#dc2626);color:#fff}
+    #btnExit:disabled{background:#2a1010;color:#7c2b2b;cursor:not-allowed;opacity:0.5}
     #btnWait{background:linear-gradient(135deg,#eab308,#ca8a04);color:#fff}
     #btnMute{background:#1e3a5f;color:#93c5fd;border:1px solid #2b4767;padding:10px 14px;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer}
     #btnMute.muted{background:#3b1f1f;color:#f87171}
-    #btnForceEntry:hover{filter:brightness(1.12);transform:scale(1.02)}
     #coachOutput{font-size:12px;color:#cbd5e1;line-height:1.65;white-space:pre-wrap;background:rgba(0,0,0,0.35);border-radius:6px;padding:10px;min-height:80px;max-height:220px;overflow-y:auto;border:1px solid #1e3a5f}
 
     /* ── COACH LIVE PANEL ── */
@@ -232,6 +238,8 @@
       <a class="btn-link" href="/agent-log">Agents Live</a>
       <a class="btn-link" href="/studio">Studio</a>
       <a class="btn-link" href="/audit">Audit</a>
+      <a class="btn-link btn-link-logs" href="/log-viewer">📋 Logs</a>
+      <a class="btn-link btn-link-tests" href="/test-runner">🧪 Tests</a>
     </div>
   </div>
 
@@ -258,7 +266,7 @@
     <span style="margin-left:auto;font-size:11px;color:var(--muted)">SSE: <span id="sseStatus" style="color:var(--short)">DÉCONNECTÉ</span></span>
   </div>
 
-  <!-- ═══ MODULE RECALAGE PRIX — isolé, localStorage, zéro impact existant ═══ -->
+  <!-- ═══ MODULE RECALAGE PRIX — isolé, aucun stockage local ═══ -->
   <style>
   #rc-wrap{margin-bottom:10px}
   #rc-bar{display:flex;align-items:center;gap:10px;padding:7px 12px;background:#0a1a2d;border:1px solid #1e3a5f;border-radius:8px;font-size:12px;flex-wrap:wrap}
@@ -412,9 +420,10 @@
 
   <script>
   (function() {
-    var RC_KEY = 'recalage_v1';
-    function rcLoad() { try { return JSON.parse(localStorage.getItem(RC_KEY)||'{}'); } catch(_){ return {}; } }
-    function rcSave(d) { try { localStorage.setItem(RC_KEY, JSON.stringify(d)); } catch(_){} }
+    // Adel strict: aucun fallback localStorage / aucun cache persistant
+    var _rcMem = {};
+    function rcLoad() { return _rcMem || {}; }
+    function rcSave(d) { _rcMem = Object.assign({}, d || {}); }
     function fmt(v) { return v > 100 ? Number(v).toFixed(2) : Number(v).toFixed(5); }
 
     // Éléments barre
@@ -492,10 +501,7 @@
       var slV    = parseFloat((slEl    ? slEl.textContent    : '').replace(/[^\d.]/g,'')) || 0;
       var tpV    = parseFloat((tpEl    ? tpEl.textContent    : '').replace(/[^\d.]/g,'')) || 0;
 
-      // Fallback: lire depuis localStorage state sauvegardé
-      if (!entryV && d.lastEntry) entryV = parseFloat(d.lastEntry) || 0;
-      if (!slV    && d.lastSl)    slV    = parseFloat(d.lastSl)    || 0;
-      if (!tpV    && d.lastTp)    tpV    = parseFloat(d.lastTp)    || 0;
+      // Adel strict: aucun fallback local
 
       var hasLevels = entryV > 0 || slV > 0 || tpV > 0;
       if (lvBlock) lvBlock.style.display = (hasLevels && ecart !== 0) ? 'block' : 'none';
@@ -602,7 +608,7 @@
     }
     refreshBar();
     updateAll();
-    setInterval(function() { updateAll(); refreshBar(); }, 250);
+    setInterval(function() { updateAll(); refreshBar(); }, 3000);
   })();
   </script>
 
@@ -611,20 +617,14 @@
     <div class="ctrl-box">
       <label>Timeframe</label>
       <select id="selTF">
-        <option value="M1">M1</option>
-        <option value="M5">M5</option>
-        <option value="M15">M15</option>
-        <option value="M30">M30</option>
-        <option value="H1" selected>H1</option>
-        <option value="H4">H4</option>
-        <option value="D1">D1</option>
-        <option value="W1">W1</option>
+        <option value="" selected disabled>--</option>
       </select>
     </div>
     <div class="ctrl-box">
       <label>Mode</label>
       <select id="selMode">
-        <option value="AUTO" selected>AUTO</option>
+        <option value="" selected disabled>--</option>
+        <option value="AUTO">AUTO</option>
         <option value="SCALPER">SCALPER</option>
         <option value="SNIPER">SNIPER</option>
         <option value="SWING">SWING</option>
@@ -743,7 +743,6 @@
           </div>
         </div>
         <div style="font-size:10px;color:var(--muted);text-align:center" id="statTotal">0 trades enregistrés</div>
-        <button id="btnResetStats" onclick="resetJournalStats()" style="margin-top:8px;width:100%;background:#1e293b;border:1px solid #334155;color:#94a3b8;font-size:10px;padding:4px 8px;border-radius:4px;cursor:pointer" title="Remettre compteurs à zéro">🗑️ Remettre à zéro</button>
       </div>
     </div>
   </div>
@@ -751,14 +750,7 @@
   <!-- MULTI-TF SCAN PANEL -->
   <div class="scan-panel" id="scanPanel">
     <div class="scan-title">⚡ Analyse Multi-Timeframes en cours...</div>
-    <div class="scan-tfs" id="scanTFs">
-      <div class="scan-tf" id="scan-M1">M1</div>
-      <div class="scan-tf" id="scan-M5">M5</div>
-      <div class="scan-tf" id="scan-M15">M15</div>
-      <div class="scan-tf" id="scan-H1">H1</div>
-      <div class="scan-tf" id="scan-H4">H4</div>
-      <div class="scan-tf" id="scan-D1">D1</div>
-    </div>
+    <div class="scan-tfs" id="scanTFs"></div>
     <div class="scan-summary" id="scanSummary"></div>
   </div>
 
@@ -778,31 +770,45 @@
 
     <!-- TF SELECTOR + AUTO LOOP -->
     <div class="tf-selector">
-      <button class="tf-btn" data-tf="M1">M1</button>
-      <button class="tf-btn" data-tf="M5">M5</button>
-      <button class="tf-btn" data-tf="M15">M15</button>
-      <button class="tf-btn active" data-tf="H1">H1</button>
-      <button class="tf-btn" data-tf="H4">H4</button>
-      <button class="tf-btn" data-tf="D1">D1</button>
-      <button id="btnAutoLoop" class="tf-btn auto-off" style="margin-left:8px">🔄 AUTO</button>
+      <span class="tf-btn active" id="tfCurrentLabel">--</span>
+      <button id="btnAutoLoop" class="tf-btn auto-off" style="margin-left:8px" disabled>🔄 AUTO</button>
       <span id="autoStatus">● LIVE</span>
-      <span id="candleCountdown" class="candle-cd">M1: --s</span>
+      <span id="candleCountdown" class="candle-cd">--: --s</span>
     </div>
 
     <div class="btn-row">
-      <button id="btnAnalyse" class="btn-action">🔍 ANALYSER</button>
-      <button id="btnEntrer" class="btn-action" disabled>✅ ENTRER</button>
-      <button id="btnExit" class="btn-action">🚪 EXIT</button>
-      <button id="btnWait" class="btn-action">⏳ ATTENDRE</button>
-      <button id="btnMuteAction" class="btn-action">🔊 VOIX</button>
+      <button id="btnAnalyse" class="btn-action" disabled>🔍 ANALYSER</button>
+      <button id="btnEntrer" class="btn-action" disabled>▶ ENTRER</button>
+      <button id="btnBe" class="btn-action" disabled>▲ BREAKEVEN</button>
+      <button id="btnPartialTp" class="btn-action" disabled>+TP PARTIEL</button>
+      <button id="btnExit" class="btn-action" disabled>■ SORTIR</button>
+      <button id="btnWait" class="btn-action" disabled>⚡ PATIENTER</button>
+      <button id="btnMuteAction" class="btn-action">🔊 SON</button>
     </div>
-    <div style="margin-top:6px">
-      <button id="btnForceEntry" style="display:none;background:linear-gradient(135deg,#f59e0b,#d97706);color:#fff;border:none;border-radius:8px;padding:9px 18px;font-size:13px;font-weight:700;cursor:pointer;letter-spacing:0.5px">⚡ FORCER L'ENTRÉE — Mode opérateur</button>
+    <div style="margin-top:6px;display:flex;gap:8px;flex-wrap:wrap">
     </div>
     <!-- BRIDGE STALE ALERT — visible uniquement quand TV bridge est coupé -->
     <div id="bridgeStaleAlert" style="display:none;padding:8px 12px;border-radius:6px;background:rgba(239,68,68,0.12);border:1px solid #ef4444;color:#ef4444;font-size:12px;font-weight:700;margin-bottom:8px;letter-spacing:0.03em">
       ⚡ BRIDGE TV COUPÉ — Prix non fiables. Ouvrez TradingView et attendez la reconnexion.
       <span id="bridgeStaleAge" style="font-weight:400;opacity:.8"></span>
+    </div>
+    <!-- BRIDGE QUALITY INDICATOR — 2 barres : flux live + champs exploitables -->
+    <div id="bridgeQualityBlock" style="display:none;margin-bottom:8px;font-size:11px;color:var(--muted)">
+      <div style="display:flex;gap:8px;align-items:center;margin-bottom:3px">
+        <span style="width:90px;flex-shrink:0">Flux live</span>
+        <div style="flex:1;height:6px;background:rgba(255,255,255,0.08);border-radius:3px;overflow:hidden">
+          <div id="bridgeFluxBar" style="height:100%;width:0%;background:#22c55e;border-radius:3px;transition:width .4s"></div>
+        </div>
+        <span id="bridgeFluxPct" style="width:36px;text-align:right;color:#22c55e;font-weight:700">0%</span>
+      </div>
+      <div style="display:flex;gap:8px;align-items:center">
+        <span style="width:90px;flex-shrink:0">Champs bridge</span>
+        <div style="flex:1;height:6px;background:rgba(255,255,255,0.08);border-radius:3px;overflow:hidden">
+          <div id="bridgeFieldsBar" style="height:100%;width:0%;background:#3b82f6;border-radius:3px;transition:width .4s"></div>
+        </div>
+        <span id="bridgeFieldsPct" style="width:36px;text-align:right;color:#3b82f6;font-weight:700">0%</span>
+      </div>
+      <div id="bridgeZoneStatus" style="margin-top:4px;font-size:10px;color:var(--muted)"></div>
     </div>
     <div id="coachOutput">Agent en attente. Appuyez sur ANALYSER pour démarrer l'analyse TradingView live.</div>
 
@@ -851,6 +857,26 @@
     <div id="armedInfoBlock" style="display:none;margin-top:6px;padding:8px 11px;border-radius:6px;border:2px solid #3b82f6;background:rgba(59,130,246,0.10);color:#93c5fd;font-size:13px;font-weight:700;line-height:1.7;letter-spacing:.02em;font-variant-numeric:tabular-nums;white-space:pre-line"></div>
   </div>
 
+  <!-- POSITIONS À VENIR + GITHUB STATUS -->
+  <div class="pos-panel" id="upcomingPanel" style="border-color:rgba(59,130,246,0.3)">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+      <h2 style="color:#93c5fd;margin:0">🎯 Positions à Venir</h2>
+      <span id="githubBadge" style="font-size:10px;padding:2px 8px;border-radius:4px;background:rgba(100,116,139,0.15);color:#64748b;font-weight:700;cursor:pointer" title="Cliquer pour configurer GitHub" onclick="document.getElementById('githubConfigPanel').style.display=document.getElementById('githubConfigPanel').style.display==='none'?'block':'none'">⬤ GitHub OFF</span>
+    </div>
+    <!-- Config GitHub (caché par défaut) -->
+    <div id="githubConfigPanel" style="display:none;margin-bottom:8px;padding:8px 10px;background:rgba(0,0,0,0.3);border-radius:6px;border:1px solid rgba(59,130,246,0.2)">
+      <div style="font-size:9px;letter-spacing:1px;text-transform:uppercase;color:#3b82f6;font-weight:700;margin-bottom:6px">Configuration GitHub Raw URL</div>
+      <div style="display:flex;gap:6px">
+        <input id="githubUrlInput" type="text" placeholder="https://raw.githubusercontent.com/USER/REPO/main/positions.json"
+          style="flex:1;background:#102740;border:1px solid #2b4767;color:#e6eef8;padding:5px 8px;border-radius:5px;font-size:11px;outline:none">
+        <button onclick="saveGithubUrl()" style="background:#1d4ed8;color:#fff;border:none;border-radius:5px;padding:5px 10px;font-size:11px;font-weight:700;cursor:pointer">Sauver</button>
+        <button onclick="startGithubAgent()" style="background:#065f46;color:#6ee7b7;border:none;border-radius:5px;padding:5px 10px;font-size:11px;font-weight:700;cursor:pointer" title="Activer l'agent GitHub pour alimenter le bridge">▶ Agent</button>
+      </div>
+      <div id="githubConfigMsg" style="font-size:10px;color:#64748b;margin-top:4px"></div>
+    </div>
+    <div id="upcomingList" style="font-size:12px;color:var(--muted)">Aucun setup anticipé — surveillance en cours...</div>
+  </div>
+
   <!-- HISTORY -->
   <div class="hist-panel">
     <h2>📋 Historique Positions (Gains / Pertes)</h2>
@@ -880,27 +906,106 @@
 // Pas de MT5. Pas de données simulées. Prix réels uniquement.
 // ═══════════════════════════════════════════════════════════════════════
 
+const STRICT_MAX_BRIDGE_AGE_MS = 30000; // 30s — au-delà: stale -> blocage strict
+
 const S = {
-  symbol: 'XAUUSD',
-  tf: 'H1',
-  mode: 'AUTO',
-  price: 0,
+  symbol: null,
+  tf: null,
+  mode: null,
+  price: null,
   muted: false,
   analysisReady: false,
   position: null,
   sse: null,
   lastMetrics: {},
   lastSignal: 'WAIT',
+  // TradingView widget inputs (doivent venir du bridge, aucun mapping local)
+  tvSymbol: null,
+  tvResolution: null,
+  // Candle close (doit venir du bridge, aucun calcul local depuis TF)
+  candleCloseAtMs: null,
+  // Strict context (bridge + serveur)
+  bridgeUpdatedAtMs: null,
+  bridgeAgeMs: null,
+  serverSymbol: null,
+  serverTf: null,
+  strictBlocked: true,
+  strictReason: 'BOOT',
+  strictDetail: '',
   // ── Indicateurs TradingView bridge — mis à jour par SSE tick-by-tick ──
   indicators: { rsi: null, macd: null, bb_upper: null, bb_lower: null, ma20: null, ma50: null, atr: null }
 };
 
 // ── UTILS ──────────────────────────────────────────────────────────────
 
+function _nStr(v) { const s = String(v == null ? '' : v).trim(); return s || null; }
+function _normSym(v) { const s = _nStr(v); return s ? s.toUpperCase() : null; }
+function _normTf(v) { const s = _nStr(v); return s ? s.toUpperCase() : null; }
+function _parseTsMs(v) {
+  if (typeof v === 'number' && isFinite(v)) return v;
+  const s = _nStr(v);
+  if (!s) return null;
+  const ms = Date.parse(s);
+  return isFinite(ms) ? ms : null;
+}
+
+const _TV_SYM_MAP = {
+  'XAUUSD':'OANDA:XAUUSD','XAGUSD':'OANDA:XAGUSD',
+  'EURUSD':'OANDA:EURUSD','GBPUSD':'OANDA:GBPUSD','USDJPY':'OANDA:USDJPY',
+  'USDCHF':'OANDA:USDCHF','AUDUSD':'OANDA:AUDUSD','NZDUSD':'OANDA:NZDUSD',
+  'USDCAD':'OANDA:USDCAD','EURJPY':'OANDA:EURJPY',
+  'NAS100':'OANDA:NAS100','US500':'OANDA:SPX500USD','US30':'OANDA:US30USD','DE40':'OANDA:DE30EUR',
+  'BTCUSD':'COINBASE:BTCUSD','ETHUSD':'COINBASE:ETHUSD',
+};
+const _TV_RES_MAP = {'M1':'1','M5':'5','M15':'15','M30':'30','H1':'60','H4':'240','D1':'D','W1':'W'};
+function _toTvWidgetSym(s) {
+  const u = String(s||'').toUpperCase();
+  if (u.includes(':')) return u;
+  return _TV_SYM_MAP[u] || null;
+}
+function _toTvWidgetRes(tf) {
+  const u = String(tf||'').toUpperCase();
+  return _TV_RES_MAP[u] || (isNaN(parseInt(u)) ? null : String(parseInt(u)));
+}
+function _isTvSymbol(v) {
+  const s = _nStr(v);
+  return !!(s && s.includes(':') && s.length >= 3);
+}
+function _isTvResolution(v) {
+  const s = _nStr(v);
+  return !!(s && (/^\d+$/.test(s) || /^[DWM]$/.test(s)));
+}
+
+function normDirection(v) {
+  const s = String(v == null ? '' : v).toUpperCase();
+  const hasBuy  = s.includes('BUY')  || s.includes('LONG')  || s.includes('ACHAT');
+  const hasSell = s.includes('SELL') || s.includes('SHORT') || s.includes('VENTE');
+  if (hasBuy && hasSell) return 'NEUTRE';
+  if (hasBuy) return 'LONG';
+  if (hasSell) return 'SHORT';
+  if (s.includes('WAIT') || s.includes('NEUTRE') || s.includes('NEUTRAL')) return 'WAIT';
+  return 'WAIT';
+}
+
+function _strictCtx() {
+  const sym = _normSym(S.symbol);
+  const tf  = _normTf(S.tf);
+  const ts  = S.bridgeUpdatedAtMs;
+  const ageMs = ts ? (Date.now() - ts) : Infinity;
+  if (!sym) return { ok: false, reason: 'NO_SYMBOL' };
+  if (!tf) return { ok: false, reason: 'NO_TIMEFRAME' };
+  if (!isFinite(ageMs) || ageMs > STRICT_MAX_BRIDGE_AGE_MS) return { ok: false, reason: 'STALE', ageMs };
+  const srvSym = _normSym(S.serverSymbol);
+  const srvTf  = _normTf(S.serverTf);
+  if (srvSym && srvSym !== sym) return { ok: false, reason: 'DESYNC_SYMBOL', detail: { bridge: sym, server: srvSym } };
+  if (srvTf && srvTf !== tf) return { ok: false, reason: 'DESYNC_TIMEFRAME', detail: { bridge: tf, server: srvTf } };
+  return { ok: true, sym, tf, ageMs };
+}
+
 function fmt(v, sym) {
   const n = Number(v);
   if (!isFinite(n) || n === 0) return '--';
-  const s = String(sym || S.symbol).toUpperCase();
+  const s = String(sym || S.symbol || '').toUpperCase();
   if (s.includes('JPY') || s.includes('XAU') || n >= 1000) return n.toFixed(2);
   return n.toFixed(5);
 }
@@ -923,16 +1028,132 @@ function fmtTime(ts) {
 
 function el(id) { return document.getElementById(id); }
 
-function setText(id, txt) {
-  const e = el(id);
-  if (e) e.textContent = txt;
+function _applyStrictUI() {
+  const st = _strictCtx();
+  const blocked = !st.ok;
+  S.strictBlocked = blocked;
+  S.strictReason = st.ok ? 'OK' : st.reason;
+
+  const staleAlert = el('bridgeStaleAlert');
+  const staleAge   = el('bridgeStaleAge');
+  if (staleAlert) staleAlert.style.display = blocked ? 'block' : 'none';
+  if (staleAge) {
+    const ctxTxt = (_normSym(S.symbol) || '--') + ' ' + (_normTf(S.tf) || '--');
+    const ageSec = st.reason === 'STALE' && isFinite(st.ageMs) ? Math.round(st.ageMs / 1000) : null;
+    staleAge.textContent = blocked
+      ? ' (' + ctxTxt + ' — ' + (st.reason === 'STALE' ? ('stale ' + (ageSec != null ? ageSec + 's' : '?s')) : st.reason) + ')'
+      : '';
+  }
+
+  // Verrou strict: aucune action tant que bridge live (symbol+tf) + fraîcheur <=30s + pas de désync serveur
+  const lockIds = ['btnAnalyse','btnEntrer','btnBe','btnPartialTp','btnExit','btnWait','btnAutoLoop'];
+  lockIds.forEach(id => {
+    const b = el(id);
+    if (!b) return;
+    if (blocked) {
+      b.disabled = true;
+      b.style.opacity = '0.4';
+      b.style.cursor = 'not-allowed';
+      b.title = 'BLOQUÉ (Adel strict): ' + st.reason;
+    } else {
+      b.style.opacity = '';
+      b.style.cursor = '';
+      if (b.title && b.title.startsWith('BLOQUÉ')) b.title = '';
+    }
+  });
+
+  // Interdit: commandes manuelles TF/mode via dashboard
+  const selTF = el('selTF');
+  const selMode = el('selMode');
+  if (selTF) {
+    selTF.disabled = true;
+    const v = _normTf(S.tf);
+    selTF.innerHTML = '<option value="" selected disabled>--</option>';
+    if (v) {
+      const opt = document.createElement('option');
+      opt.value = v; opt.textContent = v;
+      selTF.appendChild(opt);
+      selTF.value = v;
+    }
+  }
+  if (selMode) { selMode.disabled = true; selMode.value = S.mode || ''; }
+
+  const tfLabel = el('tfCurrentLabel');
+  if (tfLabel) tfLabel.textContent = _normTf(S.tf) || '--';
+
+  // Coach output: jamais "prêt" si bloqué
+  const co = el('coachOutput');
+  if (blocked && co && !String(co.textContent || '').includes('ANALYSE...')) {
+    const why = st.reason === 'STALE'
+      ? 'FLUX STALE (>30s) — attendre un tick TradingView'
+      : st.reason === 'DESYNC_SYMBOL' || st.reason === 'DESYNC_TIMEFRAME'
+        ? 'DÉSYNC dashboard ↔ serveur ↔ bridge — attendre alignement'
+        : 'CONTEXTE INCOMPLET — attendre bridge live';
+    co.textContent = '🚫 BLOQUÉ (Adel strict)\n' + why + '\n\nRequis: symbol + timeframe + flux live (≤30s).';
+    co.style.borderColor = 'var(--short)';
+  }
+
+  // Coach stream: jamais sans contexte valide
+  if (blocked) {
+    if (S._coachStream) { try { S._coachStream.close(); } catch(_) {} }
+    S._coachStream = null;
+    S._coachStreamUrl = null;
+  } else {
+    if (typeof window._connectCoachStream === 'function') window._connectCoachStream();
+  }
 }
 
+function setText(id, txt) {
+  const e = el(id);
+  if (e && e.textContent !== String(txt == null ? '' : txt)) e.textContent = txt;
+}
+
+// ── GLOBAL LOG — dashboard envoie tous ses événements au bus serveur ──────
+function systemLog(entry) {
+  try {
+    fetch('/system/log', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ source: 'dashboard', ...entry })
+    }).catch(() => {});
+  } catch (_) {}
+}
+
+// ── CAPTURE CLICS BOUTONS — log automatique avant toute action ────────────
+(function() {
+  const BTN_MAP = {
+    btnAnalyse: 'ANALYSER', btnEntrer: 'ENTRER', btnExit: 'SORTIR',
+    btnBe: 'BREAKEVEN', btnPartialTp: 'TP_PARTIEL', btnWait: 'ATTENDRE',
+    btnMuteAction: 'MUTE', btnDisarm: 'DISARM'
+  };
+  document.addEventListener('click', function(e) {
+    const btn = e.target.closest('button[id]');
+    if (!btn || !BTN_MAP[btn.id]) return;
+    const action = BTN_MAP[btn.id];
+    systemLog({ level: 'action', category: 'button', action, message: `Bouton ${action} cliqué (disabled=${btn.disabled})`, data: { btnId: btn.id, disabled: btn.disabled } });
+  }, true);
+})();
+
 async function api(path, opts) {
-  const r = await fetch(path, opts || { headers: { Accept: 'application/json' } });
-  const body = await r.text();
-  try { return JSON.parse(body || '{}'); }
-  catch (_) { throw new Error('JSON parse error: ' + body.substring(0, 80)); }
+  const method = (opts && opts.method) || 'GET';
+  systemLog({ level: 'info', category: 'api', action: method + ' ' + path, message: '→ ' + path });
+  // Injection automatique clé Adel sur toutes les routes write (non-GET)
+  const _isWrite = !['GET','HEAD'].includes(method.toUpperCase());
+  const _mergedOpts = Object.assign({}, opts || {});
+  if (_isWrite) {
+    _mergedOpts.headers = Object.assign({ 'X-Adel-Key': 'Adel' }, (_mergedOpts.headers || {}));
+  }
+  try {
+    const r = await fetch(path, _isWrite ? _mergedOpts : (opts || { headers: { Accept: 'application/json' } }));
+    const body = await r.text();
+    let parsed;
+    try { parsed = JSON.parse(body || '{}'); } catch (_) { throw new Error('JSON parse error: ' + body.substring(0, 80)); }
+    systemLog({ level: parsed?.ok === false ? 'warn' : 'info', category: 'api', action: method + ' ' + path, message: '← ' + path + ' HTTP ' + r.status, data: { status: r.status, ok: parsed?.ok } });
+    return parsed;
+  } catch (err) {
+    systemLog({ level: 'error', category: 'api', action: method + ' ' + path, message: '← ' + path + ' ERREUR: ' + err.message });
+    throw err;
+  }
 }
 
 // ── VOICE ─────────────────────────────────────────────────────────────
@@ -965,6 +1186,7 @@ function speak(text) {
     window.speechSynthesis.cancel();
     _dspkQueue.push(text);
     setTimeout(_dDrain, 80);
+    _applyStrictUI();
     return;
   }
   _dspkQueue.push(text);
@@ -974,32 +1196,54 @@ function speak(text) {
 // ── STATUS BAR ────────────────────────────────────────────────────────
 
 function updateStatusBar(sym, tf, price, source, updatedAt, connected) {
-  if (sym && sym !== '--') {
-    S.symbol = sym;
-    setText('statusSymbol', sym);
-  }
-  if (tf && tf !== '--') {
-    S.tf = tf;
-    setText('statusTF', tf);
+  const nsym = _normSym(sym);
+  const ntf  = _normTf(tf);
+  const tsMs = _parseTsMs(updatedAt);
+  S.bridgeUpdatedAtMs = tsMs;
+  S.bridgeAgeMs = tsMs ? (Date.now() - tsMs) : Infinity;
+
+  if (nsym) { S.symbol = nsym; setText('statusSymbol', nsym); }
+  else { S.symbol = null; setText('statusSymbol', '--'); }
+
+  if (ntf) {
+    S.tf = ntf;
+    setText('statusTF', ntf);
     const sel = el('selTF');
-    if (sel && Array.from(sel.options).some(o => o.value === tf)) sel.value = tf;
+    if (sel) {
+      sel.innerHTML = '<option value="" selected disabled>--</option>';
+      const opt = document.createElement('option');
+      opt.value = ntf; opt.textContent = ntf;
+      sel.appendChild(opt);
+      sel.value = ntf;
+    }
+    const tfLabel = el('tfCurrentLabel');
+    if (tfLabel) tfLabel.textContent = ntf;
+  } else {
+    S.tf = null;
+    setText('statusTF', '--');
+    const tfLabel = el('tfCurrentLabel');
+    if (tfLabel) tfLabel.textContent = '--';
   }
-  if (price && price > 0) {
+
+  if (price && price > 0 && price !== S.price) {
     S.price = price;
     const p = fmt(price, sym);
     setText('statusPrice', p);
     setText('cardPrice', p);
     const pe = el('statusPrice');
-    if (pe) pe.style.color = 'var(--long)';
+    if (pe && pe.style.color !== 'var(--long)') pe.style.color = 'var(--long)';
   }
-  setText('statusSource', source || 'TradingView');
+  setText('statusSource', source || '--');
   setText('statusTime', fmtTime(updatedAt));
   setText('cardTime', fmtTime(updatedAt));
 
   const dot = el('tvDot');
   if (dot) {
-    dot.className = 'dot ' + (connected ? 'live' : (price > 0 ? 'stale' : 'off'));
+    const stale = !connected || !tsMs || (Date.now() - tsMs) > STRICT_MAX_BRIDGE_AGE_MS;
+    dot.className = 'dot ' + (!nsym || !ntf ? 'off' : stale ? 'stale' : 'live');
   }
+
+  _applyStrictUI();
 }
 
 // ── CHART TV ──────────────────────────────────────────────────────────
@@ -1012,15 +1256,15 @@ let _chartSym = null;
 let _chartTf  = null;
 let _widgetReloadTimer = null; // debounce — évite rechargements multiples sur ticks rapides
 
-function scheduleWidgetReload(sym, tf) {
-  if (!sym) return;
-  if (sym === _chartSym && tf === _chartTf) return; // déjà à jour
+function scheduleWidgetReload(tvSymbol, tvResolution) {
+  if (!_isTvSymbol(tvSymbol) || !_isTvResolution(tvResolution)) return;
+  if (tvSymbol === _chartSym && tvResolution === _chartTf) return; // déjà à jour
   clearTimeout(_widgetReloadTimer);
   _widgetReloadTimer = setTimeout(() => {
-    if (sym !== _chartSym || tf !== _chartTf) {
-      _chartSym = sym;
-      _chartTf  = tf;
-      initTVWidget(sym, tf);
+    if (tvSymbol !== _chartSym || tvResolution !== _chartTf) {
+      _chartSym = tvSymbol;
+      _chartTf  = tvResolution;
+      initTVWidget(tvSymbol, tvResolution);
     }
   }, 600); // attendre 600ms pour laisser les ticks se stabiliser
 }
@@ -1046,8 +1290,13 @@ function _getOrCreateLevelCanvas() {
 
 function drawTradeLevels(entry, sl, tp, direction, atr) {
   if (entry !== undefined) {
-    _tvLevelData = { entry, sl, tp, direction: direction || 'LONG',
-      atr: atr || (entry ? entry * 0.003 : null) };
+    const dir = normDirection(direction);
+    _tvLevelData = { entry, sl, tp, direction: dir !== 'WAIT' ? dir : null, atr: (atr != null && Number(atr) > 0) ? Number(atr) : null };
+    // Aucun fallback ATR/symbole/tf: si atr absent, estimer uniquement depuis les niveaux reçus (données autoritatives)
+    if (!_tvLevelData.atr && Number(entry) > 0 && Number(sl) > 0 && Number(tp) > 0) {
+      const r = Math.max(Math.abs(Number(entry) - Number(sl)), Math.abs(Number(tp) - Number(entry)));
+      _tvLevelData.atr = r > 0 ? r : null;
+    }
   }
   const canvas = _getOrCreateLevelCanvas();
   if (!canvas) return;
@@ -1063,8 +1312,7 @@ function drawTradeLevels(entry, sl, tp, direction, atr) {
   const { entry: E, sl: SL, tp: TP, atr: ATR } = _tvLevelData;
   if (!Number.isFinite(E) || !Number.isFinite(SL) || !Number.isFinite(TP)) return;
 
-  // Plage basée sur la distance SL-TP réelle — évite la sur-estimation de ATR×mult
-  // qui compressait tous les niveaux au même endroit (ex: ATR=23 × 8 = 184 USD pour XAUUSD M5)
+  // Plage basée sur la distance SL-TP réelle — évite les heuristiques par actif/TF
   const _slDist  = Math.abs(E - SL) || E * 0.001;
   const _tpDist  = Math.abs(TP - E) || E * 0.002;
   const _levelSpread = Math.max(_slDist, _tpDist); // distance max entry→SL ou entry→TP
@@ -1156,7 +1404,7 @@ function clearTradeLevels() {
 async function resetJournalStats() {
   if (!confirm('Remettre tous les compteurs à zéro ? (Les données seront supprimées)')) return;
   try {
-    const r = await api('/journal/reset', { method: 'POST' });
+    throw new Error('Adel strict: reset interdit');
     if (r && r.ok) {
       ['statWin','statLoss','statRate','statTotal'].forEach(id => {
         const el = document.getElementById(id);
@@ -1181,25 +1429,31 @@ async function refreshStats() {
   } catch(_) {}
 }
 
-const TV_SYMBOLS = {
-  XAUUSD:'TVC:GOLD', XAGUSD:'TVC:SILVER', XPTUSD:'TVC:PLATINUM',
-  BTCUSD:'COINBASE:BTCUSD', BTCUSDT:'BINANCE:BTCUSDT',
-  ETHUSD:'COINBASE:ETHUSD', ETHUSDT:'BINANCE:ETHUSDT',
-  EURUSD:'FX:EURUSD', GBPUSD:'FX:GBPUSD', USDJPY:'FX:USDJPY',
-  USDCHF:'FX:USDCHF', USDCAD:'FX:USDCAD', AUDUSD:'FX:AUDUSD',
-  NZDUSD:'FX:NZDUSD', EURGBP:'FX:EURGBP', EURJPY:'FX:EURJPY',
-  NAS100:'NASDAQ:NDX', US30:'DJ:DJI', SPX500:'SP:SPX',
-  GER40:'XETR:DAX', UK100:'FTSE:UKX', WTI:'TVC:USOIL', BRENT:'TVC:UKOIL'
-};
-const TV_TF = { M1:'1', M5:'5', M15:'15', M30:'30', H1:'60', H4:'240', D1:'D', W1:'W' };
+// Adel strict: aucun hardcode symbole/TF TradingView dans le dashboard.
+// Le bridge doit fournir les champs TradingView natifs (tvSymbol + tvResolution).
 
-function initTVWidget(sym, tf) {
+function initTVWidget(tvSymbol, tvResolution) {
   const container = el('chartTV');
   const note = el('tvNote');
   if (!container) return;
 
-  const tvSym = TV_SYMBOLS[String(sym||'XAUUSD').toUpperCase()] || ('FX:' + sym);
-  const tvTF  = TV_TF[String(tf||'H1').toUpperCase()] || '60';
+  const _tvSym = _nStr(tvSymbol);
+  const _tvRes = _nStr(tvResolution);
+  if (!_isTvSymbol(_tvSym) || !_isTvResolution(_tvRes)) {
+    container.innerHTML = '';
+    if (note) note.textContent = '🚫 BLOQUÉ: en attente du bridge live (symbol + timeframe).';
+    setText('chartTitle', '--');
+    return;
+  }
+
+  const tvSym = _tvSym;
+  const tvTF  = _tvRes;
+  if (!tvTF) {
+    container.innerHTML = '';
+    if (note) note.textContent = '🚫 Timeframe invalide: ' + _tvRes;
+    setText('chartTitle', _tvSym + ' ' + _tvRes);
+    return;
+  }
 
   // Retry jusqu'à 20 fois si tv.js pas encore chargé (async)
   if (typeof TradingView === 'undefined') {
@@ -1209,7 +1463,7 @@ function initTVWidget(sym, tf) {
       attempts++;
       if (typeof TradingView !== 'undefined') {
         clearInterval(retry);
-        initTVWidget(sym, tf);
+        initTVWidget(tvSymbol, tvResolution);
       } else if (attempts >= 20) {
         clearInterval(retry);
         if (note) note.textContent = 'Widget TradingView non disponible (internet requis)';
@@ -1241,10 +1495,10 @@ function initTVWidget(sym, tf) {
       save_image: false,
       studies: ['RSI@tv-basicstudies']
     });
-    _chartSym = String(sym || S.symbol).toUpperCase();
-    _chartTf  = String(tf || S.tf).toUpperCase();
-    setText('chartTitle', _chartSym + ' ' + _chartTf);
-    if (note) note.textContent = tvSym + ' | ' + _chartTf + ' | TradingView Live';
+    _chartSym = tvSym;
+    _chartTf  = tvTF;
+    setText('chartTitle', (S.symbol && S.tf) ? (S.symbol + ' ' + S.tf) : tvSym);
+    if (note) note.textContent = tvSym + ' | ' + tvTF + ' | TradingView Live';
   } catch (e) {
     if (note) note.textContent = 'Erreur widget: ' + e.message;
   }
@@ -1322,6 +1576,23 @@ function connectSSE() {
   };
 }
 
+// ── DEBOUNCE GUARD — empêche les rafraîchissements API en rafale depuis SSE ──
+let _lastSseApiRefreshAt = 0;
+const _SSE_REFRESH_MIN_MS = 2000; // 2s minimum entre deux refreshAll/refreshMarket depuis SSE
+
+function _sseRefreshMarket() {
+  const now = Date.now();
+  if (now - _lastSseApiRefreshAt < _SSE_REFRESH_MIN_MS) return;
+  _lastSseApiRefreshAt = now;
+  refreshMarket();
+}
+function _sseRefreshAll() {
+  const now = Date.now();
+  if (now - _lastSseApiRefreshAt < _SSE_REFRESH_MIN_MS) return;
+  _lastSseApiRefreshAt = now;
+  refreshAll();
+}
+
 function handleSSE(msg) {
   if (!msg || !msg.type) return;
 
@@ -1329,7 +1600,15 @@ function handleSSE(msg) {
   if (msg.type === 'tradingview-data') {
     const p = Number(msg.price);
     if (p > 0) {
-      updateStatusBar(msg.symbol, msg.timeframe, p, 'TradingView', msg.updatedAt || new Date().toISOString(), true);
+      const _u = msg.updatedAt || null;
+      updateStatusBar(msg.symbol, msg.timeframe, p, 'TradingView', _u, !!_u);
+      // TradingView widget: bridge doit fournir ces champs (aucun mapping local)
+      const _tvSymC = _nStr(msg.tvSymbol || msg.tradingviewSymbol || msg.tradingViewSymbol || msg.tv_symbol || msg.symbolTV || msg.tvTicker);
+      const _tvResC = _nStr(msg.tvResolution || msg.resolution || msg.tvTf || msg.tvTF || msg.tv_timeframe);
+      S.tvSymbol = _isTvSymbol(_tvSymC) ? _tvSymC : null;
+      S.tvResolution = _isTvResolution(_tvResC) ? _tvResC : null;
+      S.candleCloseAtMs = _parseTsMs(msg.candleCloseAt || msg.nextCandleAt || msg.barCloseAt || msg.barCloseTs);
+      if (S.tvSymbol && S.tvResolution) scheduleWidgetReload(S.tvSymbol, S.tvResolution);
       // ── Stocker les indicateurs bridge dans S — source unique TV ──────
       if (!S.indicators) S.indicators = {};
       if (msg.rsi      != null) S.indicators.rsi      = msg.rsi;
@@ -1346,17 +1625,28 @@ function handleSSE(msg) {
         S.bridgeData = msg.bridgeData;
         // Reconstruire le multiTfConsensus local depuis bridgeData (même logique que serveur)
         const _bd = msg.bridgeData;
-        const _tfMap = [
-          { tf:'M1',  lecture: _bd.lectureTech1, score: _bd.scoreTech1, rsi: _bd.rsiTf1 },
-          { tf:'M5',  lecture: _bd.lectureTech2, score: _bd.scoreTech2, rsi: _bd.rsiTf2 },
-          { tf:'M15', lecture: _bd.lectureTech3, score: _bd.scoreTech3, rsi: _bd.rsiTf3 },
-          { tf:'H1',  lecture: _bd.lectureTech4, score: _bd.scoreTech4, rsi: _bd.rsiTf4 },
-        ];
+        const _bdInTop  = _bd.inTop  === true || _bd.zoneLiqHaute === true;
+        const _bdInBot  = _bd.inBot  === true || _bd.zoneLiqBasse === true;
+        const _bdLiqH   = Number(_bd.liqHigh || 0);
+        const _bdLiqL   = Number(_bd.liqLow  || 0);
+        // Zone par UT : Pine per-TF en priorité, sinon dérivé (zone globale + direction lecture)
+        const _deriveZone = (pinTop, pinBot, lv, globalTop, globalBot) => {
+          if (pinTop === true) return 'zone de retournement SHORT';
+          if (pinBot === true) return 'zone de retournement LONG';
+          const lu = String(lv||'').toUpperCase();
+          if (globalTop && lu.includes('VENTE')) return 'zone de retournement SHORT';
+          if (globalBot && lu.includes('ACHAT')) return 'zone de retournement LONG';
+          return '';
+        };
+        const _tfMap = [];
+        // Store zone + liquidity data directly on consensus for use in armed block + vocal
         const _details = _tfMap.map(t => {
           const lv = String(t.lecture || '').toUpperCase();
           const dir = lv.includes('VENTE') ? 'SHORT' : lv.includes('ACHAT') ? 'LONG' : 'NEUTRE';
           const rsiNum = Number(t.rsi || 0);
-          return { tf: t.tf, dir, lecture: t.lecture || 'N/A', score: t.score, rsi: t.rsi,
+          const imp    = Number(t.impulse || 0);
+          const zoneLabel = t.zoneLabel || ''; // dérivé dans _tfMap (Pine per-TF + fallback dérivé)
+          return { tf: t.tf, dir, lecture: t.lecture || 'N/A', score: t.score, rsi: t.rsi, impulse: imp, zoneLabel,
             rsiCoherent: rsiNum <= 0 ? null : dir === 'SHORT' ? rsiNum < 50 : dir === 'LONG' ? rsiNum > 50 : true,
             signalQuality: (rsiNum > 0 && ((dir==='SHORT'&&rsiNum<45)||(dir==='LONG'&&rsiNum>55))) ? 'CONFIRMÉ' : 'STRUCTUREL'
           };
@@ -1370,12 +1660,80 @@ function handleSSE(msg) {
           dominantDirection: _dom,
           aligned: _aln, against: Math.min(_longs, _shorts),
           total: _tfMap.length,
-          alignPct: Math.round((_aln / _tfMap.length) * 100),
-          state: _aln >= 3 ? 'FORT' : _aln >= 2 ? 'MOYEN' : 'MIXTE',
-          message: _aln >= 3 ? `${_aln}/4 TFs alignés ${_dom}` : _aln >= 2 ? `${_aln}/4 TFs ${_dom} — attendre M15/H1` : 'Signal mixte — attendre',
+          alignPct: _tfMap.length ? Math.round((_aln / _tfMap.length) * 100) : 0,
+          state: _tfMap.length ? (_aln >= 3 ? 'FORT' : _aln >= 2 ? 'MOYEN' : 'MIXTE') : 'N/A',
+          message: _tfMap.length ? `${_aln}/${_tfMap.length} TFs alignés ${_dom}` : 'Multi-TF indisponible (bridge)',
           anticipation: _bd.anticipationTexte,
           anticipationForce: _bd.anticipationForce,
+          inTop: _bdInTop, inBot: _bdInBot,
+          liqHigh: _bdLiqH, liqLow: _bdLiqL,
+          zoneGlobal: _bdInTop ? 'zone de retournement SHORT' : _bdInBot ? 'zone de retournement LONG' : 'hors zone',
         };
+        // Mise à jour directe de la barre TF — sans attendre refreshAnalysis (5s debounce)
+        // Chaque tick bridge = données fraîches → render immédiat des badges TF dans le panel coach
+        const _tfBarEl = document.getElementById('clpTfBar');
+        const _tfConsEl = document.getElementById('clpTfConsensus');
+        if (_tfBarEl && S.multiTfConsensus && S.multiTfConsensus.details) {
+          const _posDir2 = String(S.position && S.position.direction || '').toUpperCase();
+          _tfBarEl.innerHTML = S.multiTfConsensus.details.map(function(d) {
+            const _cls = d.dir === 'NEUTRE' || d.dir === 'N/A' ? 'neutral'
+              : (!_posDir2 || d.dir === _posDir2) ? 'aligned' : 'against';
+            const _rsiStr  = d.rsi > 0 ? ' RSI' + Math.round(d.rsi) : '';
+            const _impStr  = d.impulse > 0 ? ' imp' + Math.round(d.impulse) : '';
+            const _zoneStr = d.zoneLabel ? ' [' + d.zoneLabel + ']' : '';
+            const _title   = (d.lecture || d.dir) + _rsiStr + _impStr + _zoneStr;
+            return '<span class="clp-tf-item ' + _cls + '" title="' + _title + '">' + d.tf + (_zoneStr ? '★' : '') + '</span>';
+          }).join('');
+          if (_tfConsEl) _tfConsEl.textContent = S.multiTfConsensus.message || '';
+        }
+        // ── BRIDGE QUALITY INDICATOR — 2 barres mises à jour à chaque tick ───────
+        // Barre 1 : flux live (100% si bridgeData.lectureTech1 présent = Pine actif)
+        // Barre 2 : champs exploitables (nb champs non-null / total attendu)
+        (function() {
+          var _bq = document.getElementById('bridgeQualityBlock');
+          if (!_bq) return;
+          var _bd2 = S.bridgeData || {};
+          // Flux live : 100% si lectureTech1+rsiTf3+inTop/inBot présents = Pine envoie
+          var _fluxFields = [_bd2.lectureTech1, _bd2.lectureTech2, _bd2.lectureTech3, _bd2.rsiTf1, _bd2.rsiTf3, _bd2.inTop, _bd2.inBot];
+          var _fluxOk = _fluxFields.filter(function(v) { return v != null && v !== false && v !== ''; }).length;
+          var _fluxPct = Math.round((_fluxOk / _fluxFields.length) * 100);
+          // Champs bridge : tous les champs attendus par popup.js/dashboard
+          var _allFields = [
+            _bd2.lectureTech1, _bd2.lectureTech2, _bd2.lectureTech3, _bd2.lectureTech4,
+            _bd2.rsiTf1, _bd2.rsiTf2, _bd2.rsiTf3, _bd2.rsiTf4,
+            _bd2.scoreTech1, _bd2.scoreTech2, _bd2.scoreTech3, _bd2.scoreTech4,
+            _bd2.inTop != null ? _bd2.inTop : null,
+            _bd2.inBot != null ? _bd2.inBot : null,
+            _bd2.liqHigh > 0 ? _bd2.liqHigh : null,
+            _bd2.liqLow  > 0 ? _bd2.liqLow  : null,
+            _bd2.impulseScoreTf1, _bd2.impulseScoreTf2, _bd2.impulseScoreTf3, _bd2.impulseScoreTf4,
+            _bd2.bullRej != null ? true : null,
+            _bd2.bearRej != null ? true : null,
+            _bd2.macroBull, _bd2.macroBear
+          ];
+          var _fieldOk = _allFields.filter(function(v) { return v != null && v !== false; }).length;
+          var _fieldPct = Math.round((_fieldOk / _allFields.length) * 100);
+          // Mettre à jour les barres
+          var _fb = document.getElementById('bridgeFluxBar');
+          var _fp = document.getElementById('bridgeFluxPct');
+          var _bfb = document.getElementById('bridgeFieldsBar');
+          var _bfp = document.getElementById('bridgeFieldsPct');
+          var _bz  = document.getElementById('bridgeZoneStatus');
+          if (_fb)  { _fb.style.width  = _fluxPct + '%'; _fb.style.background = _fluxPct >= 80 ? '#22c55e' : _fluxPct >= 50 ? '#f59e0b' : '#ef4444'; }
+          if (_fp)  { _fp.textContent  = _fluxPct + '%'; _fp.style.color = _fluxPct >= 80 ? '#22c55e' : _fluxPct >= 50 ? '#f59e0b' : '#ef4444'; }
+          if (_bfb) { _bfb.style.width = _fieldPct + '%'; _bfb.style.background = _fieldPct >= 80 ? '#3b82f6' : _fieldPct >= 50 ? '#f59e0b' : '#ef4444'; }
+          if (_bfp) { _bfp.textContent = _fieldPct + '%'; _bfp.style.color = _fieldPct >= 80 ? '#3b82f6' : _fieldPct >= 50 ? '#f59e0b' : '#ef4444'; }
+          // Zone status — texte exact bridge
+          if (_bz) {
+            var _bd2Top = _bd2.inTop === true || _bd2.zoneLiqHaute === true;
+            var _bd2Bot = _bd2.inBot === true || _bd2.zoneLiqBasse === true;
+            var _zoneGlob = _bd2Top ? 'Zone de retournement SHORT' : _bd2Bot ? 'Zone de retournement LONG' : 'Hors zone';
+            var _liqStr  = (_bd2.liqHigh > 0 && _bd2.liqLow > 0) ? ' | LiqH:' + _bd2.liqHigh.toFixed(2) + ' LiqL:' + _bd2.liqLow.toFixed(2) : '';
+            _bz.textContent = _zoneGlob + _liqStr;
+            _bz.style.color = (_bd2Top || _bd2Bot) ? '#22c55e' : 'var(--muted)';
+          }
+          _bq.style.display = 'block';
+        })();
       }
       // SOURCE UNIQUE: synchroniser la position depuis le serveur si incluse dans le tick
       // Le dashboard n'a plus besoin de maintenir son propre état de position
@@ -1407,8 +1765,9 @@ function handleSSE(msg) {
         }
       }
       if (msg.marketStatus) S.marketStatus = msg.marketStatus;
-      // ── MISE À JOUR INSTANTANÉE DU PnL + JAUGE — sur chaque tick prix TV ──
-      if (S.position && S.position.entry > 0) {
+      // ── MISE À JOUR PnL + JAUGE — throttlé 500ms pour éviter clignotement ──
+      if (S.position && S.position.entry > 0 && (!S._lastPnlAt || Date.now() - S._lastPnlAt > 500)) {
+      S._lastPnlAt = Date.now();
         const _isLongDash = String(S.position.direction || '').toUpperCase() === 'LONG';
         const _pFact      = getPipFactor(S.symbol);
         const _pnlPips    = ((_isLongDash ? p - S.position.entry : S.position.entry - p) * _pFact).toFixed(1);
@@ -1454,9 +1813,14 @@ function handleSSE(msg) {
         }
       }
     }
-    // Détecter changement de symbole/TF → recharger le widget (debounced)
-    if (msg.symbol) scheduleWidgetReload(msg.symbol, msg.timeframe || S.tf);
-    refreshMarket();
+    // Widget TradingView: recharger uniquement via champs natifs fournis par le bridge (pas de mapping local)
+    if (_isTvSymbol(msg.tvSymbol) && _isTvResolution(msg.tvResolution)) {
+      S.tvSymbol = msg.tvSymbol;
+      S.tvResolution = msg.tvResolution;
+      scheduleWidgetReload(S.tvSymbol, S.tvResolution);
+    }
+    // Debounce : n'appelle refreshMarket() que toutes les 5s max (évite les requêtes en rafale)
+    _sseRefreshMarket();
     return;
   }
 
@@ -1466,23 +1830,24 @@ function handleSSE(msg) {
     const p = Number(active.price || 0);
     const prevSym = S.symbol;
     const prevTf  = S.tf;
-    // TradingView est MAÎTRE pour symbole ET TF.
-    // tradingview-data (ticks prix) est déjà géré + retourné plus haut.
-    // Ici on est dans active-symbol/initial-sync → on applique TOUJOURS le TF.
-    // On garde fromTvSource pour décider si le widget TV doit être rechargé
-    // (on évite le rechargement sur chaque tick de scraping — seulement si TF a réellement changé).
     const fromTvSource = String(active.source || msg.source || '').toLowerCase().includes('tradingview')
       || String(active.resolvedBy || msg.resolvedBy || '').toLowerCase().includes('tv-runtime');
     const tfToSync = active.timeframe || msg.timeframe || null;
+    S.serverSymbol = active.symbol || null;
+    S.serverTf = tfToSync || null;
     updateStatusBar(active.symbol, tfToSync, p > 0 ? p : 0,
-      'TradingView', active.updatedAt || new Date().toISOString(),
+      'TradingView', active.updatedAt || msg.updatedAt || null,
       msg.systemStatus?.fluxStatus === 'LIVE');
-    // Synchroniser le widget si symbole OU TF changé
-    if (active.symbol || tfToSync) {
-      scheduleWidgetReload(S.symbol, S.tf);
+    // Synchroniser le widget — tvSymbol du serveur en priorité, sinon dériver depuis symbol
+    const _syncTvSym = _isTvSymbol(active.tvSymbol) ? active.tvSymbol : _toTvWidgetSym(active.symbol);
+    const _syncTvRes = _isTvResolution(active.tvResolution) ? active.tvResolution : _toTvWidgetRes(active.timeframe);
+    if (_syncTvSym && _syncTvRes) {
+      S.tvSymbol = _syncTvSym;
+      S.tvResolution = _syncTvRes;
+      scheduleWidgetReload(S.tvSymbol, S.tvResolution);
     }
-    // refreshAll complet
-    refreshAll();
+    // Debounce : refreshAll max toutes les 5s depuis SSE
+    _sseRefreshAll();
     return;
   }
 
@@ -1518,6 +1883,41 @@ function handleSSE(msg) {
     return;
   }
 
+  // ── LIA ROBOT — analyse PRO multi-TF en temps réel ───────────────────────
+  if (msg.type === 'lia-analysis') {
+    const co = el('coachOutput');
+    const d = msg;
+    const col = d.verdict === 'LONG' ? 'var(--long)' : d.verdict === 'SHORT' ? 'var(--short)' : '#64748b';
+    if (co) { co.style.borderColor = col; co.textContent = d.text || ''; }
+    // Injecter SL/TP auto si absent
+    if (d.sl && d.tp && S.position && !S.position.sl) { S.position.sl = d.sl; S.position.tp = d.tp; }
+    // ── Mettre à jour les cartes signal depuis le verdict LIA (fix NEUTRE) ──
+    if (d.verdict && d.verdict !== 'WAIT') {
+      const _isL = d.verdict === 'LONG';
+      const _isS = d.verdict === 'SHORT';
+      const sigEl = el('cardSignal');
+      if (sigEl) {
+        sigEl.textContent = _isL ? '⚡ LONG — LIA actif' : _isS ? '⚡ SHORT — LIA actif' : '⏸ Attente signal';
+        sigEl.className = 'val ' + (_isL ? 'up' : _isS ? 'dn' : 'wait');
+      }
+      const dirEl = el('cardDir');
+      if (dirEl) {
+        dirEl.textContent = _isL ? 'HAUSSIER' : _isS ? 'BAISSIER' : 'NEUTRE';
+        dirEl.className = 'val ' + (_isL ? 'up' : _isS ? 'dn' : 'wait');
+      }
+    }
+    // Vocal si armé et verdict a changé (pas de spam)
+    if (S.armed && !S.muted && !S.position?.entry && d.verdict && d.verdict !== 'WAIT') {
+      const _vKey = d.symbol + ':' + d.verdict + ':' + d.tfCount;
+      if (S._lastLiaVocalKey !== _vKey) {
+        S._lastLiaVocalKey = _vKey;
+        const _tfs = (d.tfs || []).filter(t => t.direction === d.verdict).map(t => t.tf).join(', ');
+        speak(`${d.symbol}: signal ${d.verdict} confirmé sur ${d.tfCount} unités. ${_tfs ? 'Alignement: ' + _tfs + '.' : ''} Je surveille l'entrée.`);
+      }
+    }
+    return;
+  }
+
   // price-stale: prix TV périmé — monitoring SL/TP suspendu côté serveur
   if (msg.type === 'price-stale') {
     const sym     = msg.symbol || S.symbol;
@@ -1549,7 +1949,8 @@ function handleSSE(msg) {
 
   // mode-change: l'extension (ou une autre source) a changé le mode
   if (msg.type === 'mode-change' && msg.source !== 'dashboard') {
-    const newMode = String(msg.mode || 'AUTO').toUpperCase();
+    const newMode = String(msg.mode || '').toUpperCase();
+    if (!newMode) return;
     S.mode = newMode;
     const sel = el('selMode');
     if (sel) {
@@ -1590,6 +1991,53 @@ function handleSSE(msg) {
     return;
   }
 
+  // ── LEA ANALYSIS AUTO — Ollama local, toutes les 30s sur chaque tick bridge ──
+  // Affiche dans coachOutput SEULEMENT si pas de position active et pas de scan en cours.
+  if (msg.type === 'lea-analysis' && !S.position && !S.armed) {
+    const _leaDir  = String(msg.direction || 'WAIT').toUpperCase();
+    const _leaAna  = msg.analysis || '';
+    const _leaLvl  = msg.levels || null;
+    const _leaPine = msg.pineActive;
+    const _coEl    = el('coachOutput');
+    if (_coEl && !_coEl.textContent.includes('SCAN') && !_coEl.textContent.includes('ANALYSE...')) {
+      const _ts  = new Date().toLocaleTimeString('fr-FR');
+      const _dir = _leaDir === 'LONG' ? '🟢 LONG' : _leaDir === 'SHORT' ? '🔴 SHORT' : '⬜ WAIT';
+      const _lvlLine = _leaLvl?.valid
+        ? `SL: ${_leaLvl.sl} [${_leaLvl.slSource}] | TP: ${_leaLvl.tp} [${_leaLvl.tpSource}] | RR: ${_leaLvl.rrRatio}:1`
+        : '';
+      _coEl.textContent = [
+        `[${_ts}] ══ LEA (Ollama ${msg.model||'?'}) ══ ${_dir}`,
+        _leaAna,
+        _lvlLine,
+        `Pine: ${_leaPine ? 'ACTIF ✓' : 'INACTIF — zones OB/FVG indisponibles'}`,
+      ].filter(l => l).join('\n');
+      _coEl.style.borderColor = _leaDir === 'LONG' ? 'var(--long)' : _leaDir === 'SHORT' ? 'var(--short)' : 'var(--muted)';
+      _coEl.scrollTop = _coEl.scrollHeight;
+    }
+    // Mettre à jour sideSignal si pas de position
+    const _sideEl = el('sideSignal');
+    if (_sideEl && !S.position) {
+      _sideEl.textContent = _leaDir === 'LONG' ? '🟢 LONG [Lea]' : _leaDir === 'SHORT' ? '🔴 SHORT [Lea]' : '⬜ WAIT';
+      _sideEl.style.color = _leaDir === 'LONG' ? 'var(--long)' : _leaDir === 'SHORT' ? 'var(--short)' : 'var(--muted)';
+    }
+  }
+
+  // position-reset: EXIT global broadcast — effacement autoritatif de toute position
+  if (msg.type === 'position-reset') {
+    const _exitSym = msg.symbol || S.symbol || '';
+    const _timeStr = new Date().toLocaleTimeString('fr-FR');
+    const _coEl = el('coachOutput');
+    if (_coEl) {
+      _coEl.textContent = '■ Position fermée — ' + _timeStr + '\nCapital protégé. On reste discipliné.';
+      _coEl.style.borderColor = 'var(--muted)';
+    }
+    if (!S.muted) speak('Position fermée. Capital protégé. On reste discipliné.');
+    S._lastExitAt = Date.now();
+    setTimeout(function() { if (typeof refreshAll === 'function') refreshAll(); }, 400);
+    setTimeout(function() { if (typeof refreshStats === 'function') refreshStats(); }, 800);
+    return;
+  }
+
   // trade-action: une action trade a été exécutée (depuis extension ou dashboard)
   if (msg.type === 'trade-action') {
     const action = String(msg.action || '').toUpperCase();
@@ -1609,10 +2057,21 @@ function handleSSE(msg) {
         setText('posSL',    fmt(vp.sl));
         setText('posTP',    fmt(vp.tp));
         setText('posPhase', phase || 'IN_TRADE');
-        el('coachOutput').textContent = '✅ POSITION ' + (isLong ? 'LONG' : 'SHORT') + ' — synchronisée depuis extension.';
+        const _sym = msg.symbol || S.symbol || '--';
+        const _dir = isLong ? 'LONG' : 'SHORT';
+        const _slFmt = fmt(vp.sl);
+        const _tpFmt = fmt(vp.tp);
+        const _entFmt = fmt(vp.entry);
+        el('coachOutput').textContent = `✅ ENTRÉE ${_dir} — ${_sym} @ ${_entFmt}\n🔴 SL: ${_slFmt}  🟢 TP: ${_tpFmt}\nJe surveille la structure. Ne touchez pas au SL tant que la zone tient.`;
         el('coachOutput').style.borderColor = isLong ? 'var(--long)' : 'var(--short)';
         // Tracer les niveaux immédiatement (avant prochain refresh)
-        drawTradeLevels(Number(vp.entry), Number(vp.sl), Number(vp.tp), isLong ? 'LONG' : 'SHORT', null);
+        drawTradeLevels(Number(vp.entry), Number(vp.sl), Number(vp.tp), _dir, null);
+        // Vocal PRO — coach annonce l'entrée avec SL/TP
+        if (!S.muted) {
+          setTimeout(() => {
+            speak(`On rentre en position ${_dir} sur ${_sym}. Placez votre stop loss à ${_slFmt}. Take profit à ${_tpFmt}. Position ouverte — ne touchez pas au stop.`);
+          }, 400);
+        }
         // Démarrer le coach live + monitor
         if (typeof startCoachLive === 'function') startCoachLive();
         if (typeof startLiveMonitor === 'function' && !monitorTimer) startLiveMonitor();
@@ -1620,40 +2079,75 @@ function handleSSE(msg) {
         setTimeout(refreshAll, 600);
       }
     } else if (action === 'EXIT') {
-      S.position = null;
-      stopLiveMonitor();
-      clearTradeLevels();
-      if (typeof stopCoachLive === 'function') stopCoachLive();
-      const posDirEl = el('posDir');
-      if (posDirEl) { posDirEl.textContent = '-- EN ATTENTE --'; posDirEl.className = 'pos-val'; posDirEl.style.color = ''; }
-      // Vider tous les champs position — sinon les anciennes valeurs restent affichées
-      setText('posEntry', '--');
-      setText('posSL',    '--');
-      setText('posTP',    '--');
-      setText('posPnl',   '--');
-      const _posPhaseExitEl = el('posPhase');
-      if (_posPhaseExitEl) _posPhaseExitEl.textContent = '--';
-      // Labels de la jauge et de l'axe de prix
-      const _exitSlLbl = el('dashDistSl'); if (_exitSlLbl) _exitSlLbl.textContent = '-- pips SL';
-      const _exitTpLbl = el('dashDistTp'); if (_exitTpLbl) _exitTpLbl.textContent = 'TP -- pips';
-      const _exitRrLbl = el('dashRr');     if (_exitRrLbl) _exitRrLbl.textContent = 'RR --';
-      const _exitLvTP  = el('posLvlTP');   if (_exitLvTP)  _exitLvTP.textContent  = 'TP --';
-      const _exitLvEnt = el('posLvlEntry');if (_exitLvEnt) _exitLvEnt.textContent = 'ENT --';
-      const _exitLvSL  = el('posLvlSL');  if (_exitLvSL)  _exitLvSL.textContent  = 'SL --';
-      const _exitLvCur = el('posLvlCur'); if (_exitLvCur) _exitLvCur.textContent = 'PRIX --';
-      el('coachOutput').textContent = '🚪 Position fermée (synchronisée).';
-      el('coachOutput').style.borderColor = 'var(--muted)';
-      // ── SYNC COMPLÈTE — forcer un refreshAll() pour éliminer tous les résidus UI ──
-      // Sans ça, posBar / posStatus / sideSignal / beAdvice restent affichés après EXIT
+      const _timeStr2 = new Date().toLocaleTimeString('fr-FR');
+      const _coEl2 = el('coachOutput');
+      if (_coEl2) {
+        _coEl2.textContent = '■ Position fermée — ' + _timeStr2 + '\nCapital protégé. On reste discipliné.';
+        _coEl2.style.borderColor = 'var(--muted)';
+      }
+      if (!S.muted) speak('Position fermée. Capital protégé. On reste discipliné.');
+      _fullClientReset();
       S._lastExitAt = Date.now();
       setTimeout(function() { if (typeof refreshAll === 'function') refreshAll(); }, 400);
       setTimeout(function() { if (typeof refreshStats === 'function') refreshStats(); }, 800);
     } else if (action === 'BREAKEVEN' || action === 'BE') {
       setText('posPhase', 'BREAKEVEN');
-      el('coachOutput').textContent = '🔒 Breakeven activé (synchronisé).';
-    } else if (action === 'WAIT') {
-      el('coachOutput').textContent = '⏳ Mode ATTENTE (synchronisé depuis extension).';
+      const _beAuto  = !!msg.autoTriggered;
+      const _beSlNew = msg.beSlNew ? fmt(msg.beSlNew) : '--';
+      const _beProg  = msg.progress ? msg.progress + '%' : '';
+      const _beText  = _beAuto
+        ? `🔒 BREAKEVEN AUTOMATIQUE ✅\nStop déplacé au prix d'entrée ${_beSlNew}.\nRisque = 0. Progression : ${_beProg} vers TP.\nJe laisse la position courir — le marché offre un cadeau, ne le rendons pas.`
+        : '🔒 Breakeven activé — Stop au prix d\'entrée. Risque à zéro.';
+      const _coEl = el('coachOutput');
+      if (_coEl) { _coEl.textContent = _beText; _coEl.style.borderColor = '#22c55e'; }
+      if (_beAuto || msg.vocalMsg) {
+        speak(msg.vocalMsg || `Breakeven automatique placé. Risque à zéro. Je laisse courir.`);
+      }
+      if (S.position) S.position.bePlaced = true;
+      setTimeout(refreshAll, 800);
+    } else if (action === 'ANALYSER') {
+      // Extension ANALYSER → armer le dashboard en même temps
+      const btn = el('btnAnalyse');
+      if (btn && !btn.disabled) {
+        btn.innerHTML = '<span class="spinner"></span>ANALYSE...';
+        btn.classList.add('analyzing');
+        setTimeout(() => { btn.innerHTML = '🔍 ANALYSER'; btn.classList.remove('analyzing'); }, 12000);
+      }
+      const co = el('coachOutput');
+      if (co) {
+        co.textContent = `🔍 Agent armé sur ${msg.symbol || S.symbol}.\nJe surveille les unités de temps en temps réel.\nAnalyse en cours...`;
+        co.style.borderColor = '#3b82f6';
+      }
+      if (!S.armed) {
+        S.armed = true;
+        S._armedStartPrice = S.price;
+        S._armedSpeakCounter = 0;
+        if (typeof startArmedVocalLoop === 'function') startArmedVocalLoop();
+      }
+      speak(`Agent armé. Je surveille ${msg.symbol || S.symbol} en temps réel. Je vérifie chaque unité de temps avant d'entrer.`);
+    } else if (action === 'TAKE_PROFIT' || action === 'TP_PARTIEL') {
+      const co = el('coachOutput');
+      if (co) {
+        co.textContent = `💰 PRISE PARTIELLE TP ✅\nUne partie du profit sécurisée.\nJe déplace le stop en BE si ce n'est pas déjà fait et je laisse courir le reste.`;
+        co.style.borderColor = '#22c55e';
+      }
+      if (!S.muted) speak('Prise de bénéfice partielle effectuée. Stop en breakeven. Je laisse le reste courir.');
+      setTimeout(refreshAll, 600);
+    } else if (action === 'WAIT' || action === 'ATTENDRE') {
+      const co = el('coachOutput');
+      if (co) co.textContent = '⏳ Mode ATTENTE — Je surveille sans forcer. Signal pas encore confirmé.';
     }
+    return;
+  }
+
+  // tp-trail-advice: conseiller trail SL quand >=80% vers TP
+  if (msg.type === 'tp-trail-advice') {
+    const co = el('coachOutput');
+    if (co) {
+      co.textContent = `🎯 OBJECTIF À ${msg.progress}% !\n${msg.vocalMsg || 'Prise partielle recommandée ou trail du stop.'}`;
+      co.style.borderColor = '#f97316';
+    }
+    if (msg.vocalMsg && !S.muted) speak(msg.vocalMsg);
     return;
   }
 
@@ -1740,6 +2234,8 @@ async function refreshMarket() {
     if (d.ok && d.currentData && d.currentData.price > 0) {
       const cd = d.currentData;
       const active = d.activeSymbol || {};
+      S.serverSymbol = active.symbol || cd.symbol || null;
+      S.serverTf = active.timeframe || cd.timeframe || null;
       updateStatusBar(active.symbol || cd.symbol, active.timeframe || cd.timeframe,
         cd.price, 'TradingView', cd.updatedAt, d.systemStatus?.fluxStatus === 'LIVE');
 
@@ -1748,8 +2244,9 @@ async function refreshMarket() {
       const _spreadEl = document.getElementById('cardSpread');
       if (_spreadEl) {
         if (cd.bid && cd.ask && cd.ask > cd.bid) {
-          const dec = String(S.symbol).includes('JPY') ? 3 : String(S.symbol).includes('XAU') || S.price > 100 ? 2 : 5;
-          _spreadEl.textContent = (cd.ask - cd.bid).toFixed(dec);
+          const spr = cd.ask - cd.bid;
+          const dec = spr < 0.01 ? 5 : spr < 0.1 ? 3 : 2;
+          _spreadEl.textContent = spr.toFixed(dec);
           _spreadEl.title = 'Spread broker réel';
         } else {
           // Source TV : bid = ask (pas de vrai spread courtier)
@@ -1757,9 +2254,7 @@ async function refreshMarket() {
           const _atrPx = (S.indicators && S.indicators.atr) || (cd.indicators && cd.indicators.atr);
           const _rsiPx = (S.indicators && S.indicators.rsi) || (cd.indicators && cd.indicators.rsi);
           if (_atrPx > 0) {
-            const _isXau = String(S.symbol || '').includes('XAU') || (S.price || 0) > 100;
-            // Pour XAUUSD: ATR en pts USD. Pour forex: ATR en pips (mult ×10000)
-            const _atrDisplay = _isXau ? Number(_atrPx).toFixed(2) + 'pt' : Number(_atrPx * 10000).toFixed(1) + 'p';
+            const _atrDisplay = Number(_atrPx).toFixed(5).replace(/0+$/,'').replace(/\.$/,'');
             _spreadEl.textContent = 'ATR ' + _atrDisplay;
             _spreadEl.title = 'ATR (volatilité réelle) — spread broker non disponible via TradingView. RSI=' + (_rsiPx ? Math.round(_rsiPx) : '--');
           } else {
@@ -1894,7 +2389,7 @@ function renderPosLevelCanvas(entry, sl, tp, curPrice, isLong) {
 async function refreshAnalysis() {
   if (!S.price || S.price === 0) return;
   try {
-    const d = await api('/coach/realtime?symbol=' + S.symbol + '&tf=' + S.tf + '&mode=' + S.mode);
+    const d = await api('/coach/realtime?symbol=' + encodeURIComponent(S.symbol) + '&tf=' + encodeURIComponent(S.tf) + (S.mode ? '&mode=' + encodeURIComponent(S.mode) : ''));
     if (!d || (!d.coach && !d.signal && !d.agents && !d.tradeState)) return;
 
     // Badge source données — prix + signal
@@ -1923,7 +2418,7 @@ async function refreshAnalysis() {
     // Conflict detection — depuis server sourceSummary (source unique)
     const _snap = d.coach?.analysisSnapshot?.sourceSummary || d.analysisSnapshot?.sourceSummary || {};
     const _conflictDetected = !!_snap.conflictDetected;
-    const _isDirConflict  = !!_snap.isDirectionalConflict; // conflit TF réel (H1 vs M15)
+    let _isDirConflict  = !!_snap.isDirectionalConflict; // conflit directionnel multi-TF (source serveur)
     const _conflictReason = String(_snap.conflictReason || '');  // vraie raison du blocage
     const _tvDir = String(_snap.tvDirection || '').toUpperCase();
     const _rtDir = String(_snap.runtimeDirection || '').toUpperCase();
@@ -1945,11 +2440,15 @@ async function refreshAnalysis() {
     const isExecutable = canEnter && _execSlV > 0 && _execTpV > 0;
 
     // LABELS MÉTIER — distingue conflit TF réel vs blocage qualité
-    const isLongSig  = signal.includes('BUY') || signal.includes('LONG');
-    const isShortSig = signal.includes('SELL') || signal.includes('SHORT');
-    const _dirLabel  = isLongSig ? 'LONG' : isShortSig ? 'SHORT' : '';
+    const isLongSigRaw  = signal.includes('BUY') || signal.includes('LONG');
+    const isShortSigRaw = signal.includes('SELL') || signal.includes('SHORT');
+    const isDirTextConflict = isLongSigRaw && isShortSigRaw;
+    _isDirConflict = _isDirConflict || isDirTextConflict;
+    const isLongSig  = isLongSigRaw && !isShortSigRaw;
+    const isShortSig = isShortSigRaw && !isLongSigRaw;
+    const _dirLabel  = isDirTextConflict ? '' : (isLongSig ? 'LONG' : isShortSig ? 'SHORT' : '');
 
-    // Conflit TF = H1 haussier + M15 baissier (directions opposées sur TFs)
+    // Conflit directionnel multi-TF = directions opposées entre unités disponibles
     // Blocage qualité = RSI/confidence/R:R insuffisant (signal faible)
     // Raison de blocage lisible — extraire la partie utile du conflictReason
     const _blockShort = _conflictReason
@@ -1983,7 +2482,7 @@ async function refreshAnalysis() {
     const dirEl = el('cardDir');
     if (dirEl) {
       // Direction: toujours afficher la direction détectée clairement
-      // Conflit TF réel (H1↔M15) = avertissement. Blocage qualité = direction + icône simple.
+      // Conflit directionnel multi-TF = avertissement. Blocage qualité = direction + icône simple.
       const dir = _isDirConflict
         ? ('⚠️ ' + _tvDir + ' ↔ ' + (_rtDir === 'WAIT' ? 'NEUTRE' : _rtDir))
         : isLongSig ? 'HAUSSIER'
@@ -2132,7 +2631,15 @@ async function refreshAnalysis() {
     const pos = (_tsIsActive && ts.virtualPosition) ? ts.virtualPosition : null; // FIX: jamais d.virtualPosition hors position active
     const tsPhase = String(ts?.phase || '').toUpperCase();
     const tsActive = ts && ts.entered && tsPhase !== 'EXITED' && tsPhase !== 'CLOSED';
-    const tsArmed  = tsPhase === 'ARMED';
+    const tsArmed  = tsPhase === 'ARMED' || tsPhase === 'ANALYSER';
+    // Sync S.armed depuis l'état serveur (extension ANALYSER → dashboard armé)
+    if (tsArmed && !S.armed) {
+      S.armed = true;
+      S._armedStartPrice = S._armedStartPrice || S.price;
+      S._armedSpeakCounter = 0;
+      S._lastArmedSpeakKey = null;
+      if (typeof startArmedVocalLoop === 'function') startArmedVocalLoop();
+    }
     // ── SYNC S.position depuis le serveur (page refresh / changement de symbole) ──
     // S.position peut être null après un refresh alors que le serveur a une position active.
     // On le resynchronise ici pour que runMonitorCycle() et le live monitor fonctionnent.
@@ -2181,6 +2688,16 @@ async function refreshAnalysis() {
         btnAnalyse.style.cursor = '';
       }
     }
+
+    // ── ACTIVER SORTIR / BREAKEVEN / +TP si position ouverte ──────────────────
+    // tsActive suffit (entered=true, pas EXITED) même si virtualPosition null (bridge offline)
+    // Source unique: tsActive (serveur). Aucun fallback position locale.
+    const _hasPos = tsActive;
+    const _btnExitD = el('btnExit'), _btnBeD = el('btnBe'), _btnPtpD = el('btnPartialTp');
+    if (_btnExitD) { _btnExitD.disabled = !_hasPos; _btnExitD.style.opacity = _hasPos ? '' : '0.4'; }
+    if (_btnBeD)   { _btnBeD.disabled   = !_hasPos; _btnBeD.style.opacity   = _hasPos ? '' : '0.4'; }
+    if (_btnPtpD)  { _btnPtpD.disabled  = !_hasPos; _btnPtpD.style.opacity  = _hasPos ? '' : '0.4'; }
+
 
     if ((tsActive || tsArmed) && pos && pos.entry && pos.sl && pos.tp) {
       // Coach live: démarrer si position active et pas encore démarré
@@ -2362,20 +2879,25 @@ async function refreshAnalysis() {
           const _aBd  = S.bridgeData || {};
           const _aMtf = (S.multiTfConsensus && S.multiTfConsensus.details) || [];
           // Zone
-          const _aZone = _aBd.inBot === true ? 'Zone BASSE' : _aBd.inTop === true ? 'Zone HAUTE' : 'Hors zone';
-          // TF directions abrégées : A=achat, V=vente, N=neutre, + = fort
-          const _aTfStr = ['M1','M5','M15','H1'].map(tf => {
-            const _tf = _aMtf.find(x => x.tf === tf);
-            if (!_tf) return tf + ':N';
-            const _sc = Number(_tf.score || 0);
-            const _sfx = Math.abs(_sc) >= 60 ? '+' : '';
-            const _let = _tf.dir === 'LONG' ? 'A' : _tf.dir === 'SHORT' ? 'V' : 'N';
-            return tf + ':' + _let + _sfx;
-          }).join('  ');
-          // Prix + distance zone
-          const _aPx  = S.price > 0 ? fmt(S.price) : '--';
-          const _aMid = Number(_aBd.midpoint || 0);
-          const _aMidStr = _aMid > 0 ? '  Mid: ' + fmt(_aMid) : '';
+          const _aZone = _aBd.inBot === true ? 'Zone de retournement LONG' : _aBd.inTop === true ? 'Zone de retournement SHORT' : 'Hors zone';
+          // Directions abrégées : A=achat, V=vente, N=neutre, + = fort (TFs fournis par le serveur/bridge)
+          const _aTfStr = Array.isArray(_aMtf) && _aMtf.length
+            ? _aMtf.map(function(x) {
+              const tf = _nStr(x.tf) || '--';
+              const _sc = Number(x.score || 0);
+              const _sfx = Math.abs(_sc) >= 60 ? '+' : '';
+              const _let = x.dir === 'LONG' ? 'A' : x.dir === 'SHORT' ? 'V' : 'N';
+              return tf + ':' + _let + _sfx;
+            }).join('  ')
+            : '--';
+          // Prix + liquidité depuis bridge
+          const _aPx   = S.price > 0 ? fmt(S.price) : '--';
+          const _aLiqH = Number(_aBd.liqHigh || 0);
+          const _aLiqL = Number(_aBd.liqLow  || 0);
+          const _aLiqStr = (_aLiqH > 0 && _aLiqL > 0)
+            ? `  LiqH:${fmt(_aLiqH)}  LiqL:${fmt(_aLiqL)}`
+            : Number(_aBd.midpoint || 0) > 0 ? '  Mid:' + fmt(Number(_aBd.midpoint)) : '';
+          const _aMidStr = _aLiqStr; // remplace midpoint par liqHigh/liqLow (source bridge)
           // SL / TP / RR
           const _aEntry = pos.entry ? Number(pos.entry) : 0;
           const _aSl    = pos.sl ? Number(pos.sl) : 0;
@@ -2544,8 +3066,162 @@ function updateTicker(events) {
   }).join('  ●  ');
 }
 
+async function refreshUpcoming() {
+  const el_up = el('upcomingList');
+  if (!el_up) return;
+  try {
+    const d = await api('/coach/realtime?symbol=' + encodeURIComponent(S.symbol) + '&tf=' + encodeURIComponent(S.tf) + (S.mode ? '&mode=' + encodeURIComponent(S.mode) : ''));
+    const coach = d?.coach || {};
+    const exec  = d?.execution || coach.execution || {};
+    const bd    = S._lastBridgeData || {};
+    const canEnter  = exec.canEnter === true;
+    const sl  = Number(exec.sl  || 0);
+    const tp  = Number(exec.tp  || 0);
+    // SOURCE UNIQUE: tvDirection du bridge — interdiction d'utiliser agents.analysis (règle DIRECTION_SOURCE_UNIQUE)
+    const rawDir = String(
+      d.sourceSummary?.tvDirection || coach.signal?.tvDirection || exec.direction || 'NEUTRE'
+    ).toUpperCase();
+    const isL = rawDir.includes('LONG') || rawDir.includes('BUY');
+    const isS = rawDir.includes('SHORT') || rawDir.includes('SELL');
+    const direction = isL ? 'LONG' : isS ? 'SHORT' : null;
+
+    // Anticipation from bridge (Pine script)
+    const antTxt = bd.anticipationTexte || bd.anticipation || '';
+    const anticipating = antTxt && antTxt !== 'RAS' && antTxt !== 'NEUTRE';
+
+    if (!direction && !anticipating) {
+      el_up.innerHTML = '<div style="color:var(--muted);font-size:11px">Aucun setup anticipé — surveillance en cours...</div>';
+      return;
+    }
+
+    const rows = [];
+    if (direction && (sl > 0 || tp > 0)) {
+      const col = isL ? '#22c55e' : '#ef4444';
+      const icon = isL ? '▲' : '▼';
+      rows.push(`<div style="display:flex;justify-content:space-between;align-items:center;padding:5px 0;border-bottom:1px solid rgba(255,255,255,0.05)">
+        <span style="color:${col};font-weight:700;font-size:13px">${icon} ${direction} — ${S.symbol}</span>
+        <span style="font-size:10px;color:${canEnter ? '#22c55e' : 'var(--muted)'};font-weight:600">${canEnter ? '✅ PRÊT' : '⏳ EN ATTENTE'}</span>
+      </div>`);
+      // SL/TP indicatifs = non-entrés. Affichage uniquement si pas de position ouverte.
+      if (!S.position?.entry) {
+        if (sl > 0) rows.push(`<div style="display:flex;justify-content:space-between;font-size:11px;padding:2px 0"><span style="color:var(--muted)">🎯 SL prévu</span><span style="color:#ef4444;font-weight:700">${fmt(sl)}</span></div>`);
+        if (tp > 0) rows.push(`<div style="display:flex;justify-content:space-between;font-size:11px;padding:2px 0"><span style="color:var(--muted)">🎯 TP prévu</span><span style="color:#22c55e;font-weight:700">${fmt(tp)}</span></div>`);
+      }
+    }
+    if (anticipating) {
+      rows.push(`<div style="margin-top:5px;font-size:11px;color:#93c5fd;padding:4px 6px;background:rgba(59,130,246,0.08);border-radius:4px">🎯 ${antTxt}</div>`);
+    }
+    el_up.innerHTML = rows.join('') || '<div style="color:var(--muted);font-size:11px">Aucun setup anticipé.</div>';
+  } catch (_) {
+    el_up.innerHTML = '<div style="color:var(--muted);font-size:11px">Aucun setup anticipé.</div>';
+  }
+  // ── GitHub positions — lire les entrées configurées via /api/github-positions
+  try {
+    const gh = await api('/api/github-positions');
+    if (gh?.ok && Array.isArray(gh.positions) && gh.positions.length > 0) {
+      const ghRows = gh.positions.map(p => {
+        const dir = String(p.direction || p.verdict || '').toUpperCase();
+        const isL = dir.includes('LONG') || dir.includes('BUY');
+        const col = isL ? '#22c55e' : '#ef4444';
+        const icon = isL ? '▲' : '▼';
+        const sym = String(p.symbol || '').toUpperCase();
+        const entry = Number(p.entry || 0);
+        const sl    = Number(p.sl    || 0);
+        const tp    = Number(p.tp    || 0);
+        return `<div style="padding:5px 0;border-bottom:1px solid rgba(255,255,255,0.05)">
+          <div style="display:flex;justify-content:space-between;align-items:center">
+            <span style="color:${col};font-weight:700;font-size:13px">${icon} ${dir} — ${sym}</span>
+            <span style="font-size:10px;color:#3b82f6;font-weight:700">GitHub</span>
+          </div>
+          ${entry > 0 ? `<div style="display:flex;gap:14px;font-size:11px;margin-top:3px">
+            <span style="color:var(--muted)">ENT <span style="color:#f97316;font-weight:700">${fmt(entry)}</span></span>
+            ${sl > 0 ? `<span style="color:var(--muted)">SL <span style="color:#ef4444;font-weight:700">${fmt(sl)}</span></span>` : ''}
+            ${tp > 0 ? `<span style="color:var(--muted)">TP <span style="color:#22c55e;font-weight:700">${fmt(tp)}</span></span>` : ''}
+          </div>` : ''}
+          ${p.note ? `<div style="font-size:10px;color:#64748b;margin-top:2px">${p.note}</div>` : ''}
+        </div>`;
+      }).join('');
+      const panel = el('upcomingPanel');
+      if (panel) {
+        const existing = el_up.innerHTML;
+        el_up.innerHTML = (existing.includes('Aucun setup') ? '' : existing) +
+          `<div style="margin-top:6px;padding-top:6px;border-top:1px solid rgba(59,130,246,0.2)">
+            <div style="font-size:9px;letter-spacing:1px;text-transform:uppercase;color:#3b82f6;font-weight:700;margin-bottom:4px">Entrées GitHub</div>
+            ${ghRows}
+          </div>`;
+      }
+    }
+  } catch (_) {}
+}
+
+// ── GITHUB CONFIG ─────────────────────────────────────────────────────
+async function saveGithubUrl() {
+  const inp = document.getElementById('githubUrlInput');
+  const msg = document.getElementById('githubConfigMsg');
+  const url = inp ? inp.value.trim() : '';
+  if (!url) { if (msg) msg.textContent = 'URL requise.'; return; }
+  try {
+    const r = await fetch('/api/github-positions/config', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-Adel-Key': 'Adel' },
+      body: JSON.stringify({ url })
+    });
+    const d = await r.json();
+    if (d.ok) {
+      if (msg) { msg.textContent = 'Sauvegardé.'; msg.style.color = '#22c55e'; }
+      refreshGithubStatus();
+    } else {
+      if (msg) { msg.textContent = d.error || 'Erreur.'; msg.style.color = '#ef4444'; }
+    }
+  } catch (e) {
+    if (msg) { msg.textContent = 'Erreur réseau.'; msg.style.color = '#ef4444'; }
+  }
+}
+
+async function refreshGithubStatus() {
+  try {
+    const d = await api('/api/github-positions/status');
+    const badge = document.getElementById('githubBadge');
+    const inp = document.getElementById('githubUrlInput');
+    if (!badge) return;
+    if (d?.agentActive && d?.bridgeLive) {
+      badge.textContent = '⬤ GitHub AGENT ON';
+      badge.style.background = 'rgba(34,197,94,0.2)';
+      badge.style.color = '#4ade80';
+    } else if (d?.configured) {
+      badge.textContent = '⬤ GitHub CONFIG (agent off)';
+      badge.style.background = 'rgba(234,179,8,0.15)';
+      badge.style.color = '#facc15';
+    } else {
+      badge.textContent = '⬤ GitHub OFF';
+      badge.style.background = 'rgba(100,116,139,0.15)';
+      badge.style.color = '#64748b';
+    }
+    if (inp && d?.url && !inp.value) inp.value = d.url;
+  } catch (_) {}
+}
+
+async function startGithubAgent() {
+  const msg = document.getElementById('githubConfigMsg');
+  try {
+    const r = await fetch('/api/github-positions/agent/start', {
+      method: 'POST', headers: { 'X-Adel-Key': 'Adel' }
+    });
+    const d = await r.json();
+    if (d.ok) {
+      if (msg) { msg.textContent = 'Agent démarré — bridge activé dans 2s.'; msg.style.color = '#4ade80'; }
+      setTimeout(refreshGithubStatus, 2000);
+    } else {
+      if (msg) { msg.textContent = d.error || 'Erreur agent.'; msg.style.color = '#ef4444'; }
+    }
+  } catch (e) {
+    if (msg) { msg.textContent = 'Erreur réseau.'; msg.style.color = '#ef4444'; }
+  }
+}
+
 async function refreshAll() {
-  await Promise.allSettled([refreshMarket(), refreshAnalysis(), refreshHistory(), refreshNews()]);
+  await Promise.allSettled([refreshMarket(), refreshAnalysis(), refreshHistory(), refreshNews(), refreshUpcoming(), refreshGithubStatus()]);
+  _applyStrictUI();
 }
 
 // ── LIVE MONITOR ──────────────────────────────────────────────────────
@@ -2566,24 +3242,17 @@ async function runMonitorCycle() {
   if (livePanel) livePanel.classList.add('active');
   setText('monitorSymbol', monSym + ' ' + monTf + ' · cycle #' + monitorCycle + ' · agent actif ●');
 
+  const mtf = S._lastMultiTF || {};
+  const tfs = Object.keys(mtf);
   let longC = 0, shortC = 0, neutreC = 0;
-  for (const tfScan of SCAN_TFS) {
-    scanMarkScanning(tfScan);
-    try {
-      const d = await api('/coach/realtime?symbol=' + monSym + '&tf=' + tfScan + '&mode=' + S.mode);
-      const coach = d?.coach || {};
-      const exec  = d?.execution || coach.execution || {};
-      const rawS  = String(coach.signal?.verdict || exec.decision || 'WAIT').toUpperCase();
-      const isLm = rawS.includes('BUY') || rawS.includes('LONG');
-      const isSm = rawS.includes('SELL') || rawS.includes('SHORT');
-      const dir = isLm ? 'LONG' : isSm ? 'SHORT' : 'NEUTRE';
-      scanMarkDone(tfScan, dir);
-      if (isLm) longC++; else if (isSm) shortC++; else neutreC++;
-    } catch (_) {
-      scanMarkDone(tfScan, 'NEUTRE');
-      neutreC++;
+  if (tfs.length) {
+    scanReset();
+    for (const tfScan of tfs) {
+      const r = mtf[tfScan] || {};
+      const dir = normDirection(r.direction || r.signal);
+      scanMarkDone(tfScan, dir, r.rsi ?? null, r.noData ? 'NO_DATA' : null);
+      if (dir === 'LONG') longC++; else if (dir === 'SHORT') shortC++; else neutreC++;
     }
-    await new Promise(r => setTimeout(r, 200));
   }
 
   // 2. Coaching contextuel (mode monitor — position en cours)
@@ -2598,7 +3267,7 @@ async function runMonitorCycle() {
     });
     monitorText = cr.response || '';
   } catch (_) {
-    monitorText = 'Suivi actif — ' + monSym + ' · ' + longC + '/' + SCAN_TFS.length + ' LONG · ' + shortC + '/' + SCAN_TFS.length + ' SHORT';
+    monitorText = 'Suivi actif — ' + monSym + (tfs.length ? (' · ' + longC + '/' + tfs.length + ' LONG · ' + shortC + '/' + tfs.length + ' SHORT') : '');
   }
 
   // 3. Mettre à jour liveMonitorText ET coachOutput (agent toujours visible)
@@ -2613,7 +3282,7 @@ async function runMonitorCycle() {
   }
 
   // 4. Mise à jour résumé scan
-  const summaryText = longC + '/' + SCAN_TFS.length + ' LONG · ' + shortC + '/' + SCAN_TFS.length + ' SHORT · ' + neutreC + '/' + SCAN_TFS.length + ' NEUTRE';
+  const summaryText = tfs.length ? (longC + '/' + tfs.length + ' LONG · ' + shortC + '/' + tfs.length + ' SHORT · ' + neutreC + '/' + tfs.length + ' NEUTRE') : 'Multi-TF indisponible';
   setText('scanSummary', summaryText);
 
   // 5. Voix (1 phrase clé)
@@ -2624,11 +3293,31 @@ async function runMonitorCycle() {
   if (S.position && S.position.entry && S.price > 0) {
     const isLongPos = S.position.direction === 'LONG';
     const pFactor = getPipFactor(S.symbol);
-    const pnlPips = ((isLongPos ? S.price - S.position.entry : S.position.entry - S.price) * pFactor).toFixed(1);
+    const rawPnl = isLongPos ? S.price - S.position.entry : S.position.entry - S.price;
+    const pnlPips = (rawPnl * pFactor).toFixed(1);
     const pnlEl = el('posPnl');
     if (pnlEl) {
       pnlEl.textContent = (Number(pnlPips) >= 0 ? '+' : '') + pnlPips + ' pips';
       pnlEl.className = 'pos-val ' + (Number(pnlPips) >= 0 ? 'up' : 'dn');
+    }
+
+    // 7. BREAK-EVEN AUTO — déplacer SL à entry dès que profit ≥ distance SL initiale
+    if (S.position.sl && !S.position._beApplied) {
+      const slDist = Math.abs(S.position.entry - S.position.sl);
+      const beThreshold = slDist * 1.0; // dès que profit = 1x SL → BE
+      if (rawPnl >= beThreshold && slDist > 0) {
+        const bePrice = S.position.entry;
+        S.position.sl = bePrice;
+        S.position._beApplied = true;
+        const beMsg = 'BE AUTO — SL déplacé à ' + bePrice.toFixed(2) + ' (break-even protégé)';
+        if (el('coachOutput')) el('coachOutput').textContent = '🛡️ ' + beMsg;
+        speak('Break-even automatique activé. Stop déplacé à l\'entrée.');
+        // Notifier le serveur
+        api('/coach/trade-action', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ symbol: S.symbol, timeframe: S.tf, action: 'BE', note: beMsg })
+        }).catch(() => {});
+      }
     }
   }
 }
@@ -2654,13 +3343,25 @@ function stopLiveMonitor() {
 
 // ── SCAN MULTI-TF ─────────────────────────────────────────────────────
 
-const SCAN_TFS = ['M1','M5','M15','H1','H4','D1'];
+function _ensureScanChip(tf) {
+  const t = _nStr(tf);
+  if (!t) return null;
+  const id = 'scan-' + t;
+  let e = el(id);
+  if (e) return e;
+  const wrap = el('scanTFs');
+  if (!wrap) return null;
+  e = document.createElement('div');
+  e.className = 'scan-tf';
+  e.id = id;
+  e.textContent = t;
+  wrap.appendChild(e);
+  return e;
+}
 
 function scanReset() {
-  SCAN_TFS.forEach(t => {
-    const e = el('scan-' + t);
-    if (e) { e.className = 'scan-tf'; e.textContent = t; }
-  });
+  const wrap = el('scanTFs');
+  if (wrap) wrap.innerHTML = '';
   setText('scanSummary', '');
 }
 
@@ -2767,11 +3468,13 @@ async function callLiaMonitor(analysisData) {
   _liaRunning = true;
   _lastLiaTick = now;
   try {
-    const sym = S.symbol || 'XAUUSD';
+    const st = _strictCtx();
+    if (!st.ok) return;
+    const sym = S.symbol;
     const pos = S.position || {};
     const payload = {
       symbol:    sym,
-      timeframe: S.tf || 'M5',
+      timeframe: S.tf,
       mode:      'monitor',
       price:     S.price || analysisData?.price,
       position: {
@@ -2826,42 +3529,16 @@ async function coachLiveTick() {
   _coachLiveRunning = true;
   try {
     if (!S.position || !S.position.entry) { hideCoachLive(); return; }
-    const sym = S.symbol || 'XAUUSD';
+    const st = _strictCtx();
+    if (!st.ok) { hideCoachLive(); return; }
+    const sym = S.symbol;
 
     // 1. Analyse règles rapide (3s)
     const r = await api('/coach/live-analysis?symbol=' + encodeURIComponent(sym));
     if (!r || !r.ok) { hideCoachLive(); return; }
 
-    // 2. Multi-TF consensus — utiliser S.multiTfConsensus (mis à jour en live par SSE bridgeData)
-    // Fallback: /debug/bridge si S.multiTfConsensus pas encore disponible
-    let mtf = S.multiTfConsensus || null;
-    try {
-      const bd = await api('/debug/bridge?symbol=' + encodeURIComponent(sym));
-      if (bd?.ok) {
-        r._bridge = bd;
-        // Construire multiTfConsensus depuis bridgePayload si pas encore dans S
-        if (!mtf && bd.bridgePayload) {
-          const _bp = bd.bridgePayload;
-          const _tfs = [
-            { tf:'M1', lecture: _bp.lectureTech1, score: _bp.scoreTech1, rsi: _bp.rsiTf1 },
-            { tf:'M5', lecture: _bp.lectureTech2, score: _bp.scoreTech2, rsi: _bp.rsiTf2 },
-            { tf:'M15',lecture: _bp.lectureTech3, score: _bp.scoreTech3, rsi: _bp.rsiTf3 },
-            { tf:'H1', lecture: _bp.lectureTech4, score: _bp.scoreTech4, rsi: _bp.rsiTf4 },
-          ];
-          const _dets = _tfs.map(t => {
-            const lv = String(t.lecture||'').toUpperCase();
-            const d = lv.includes('VENTE')?'SHORT':lv.includes('ACHAT')?'LONG':'NEUTRE';
-            return { tf:t.tf, dir:d, lecture:t.lecture||'N/A', score:t.score, rsi:t.rsi };
-          });
-          const _L=_dets.filter(d=>d.dir==='LONG').length, _S=_dets.filter(d=>d.dir==='SHORT').length;
-          const _dom=_L>_S?'LONG':_S>_L?'SHORT':'MIXTE', _aln=Math.max(_L,_S);
-          mtf = { details:_dets, dominantDirection:_dom, aligned:_aln, total:4,
-            state:_aln>=3?'FORT':_aln>=2?'MOYEN':'MIXTE',
-            message:_aln>=3?`${_aln}/4 TFs ${_dom}`:`${_aln}/4 — attendre alignement` };
-          S.multiTfConsensus = mtf;
-        }
-      }
-    } catch(_) {}
+    // 2. Multi-TF consensus — UNIQUEMENT depuis SSE bridgeData (aucun fallback /debug/bridge)
+    const mtf = S.multiTfConsensus || null;
 
     renderCoachLive(r, mtf);
 
@@ -2927,7 +3604,7 @@ function startCoachLive() {
   _lastCoachLiveMsg = '';
   _lastLiaTick      = 0;
   coachLiveTick();
-  _coachLiveTimer = setInterval(coachLiveTick, 3000);
+  _coachLiveTimer = setInterval(coachLiveTick, 5000);
 }
 
 function stopCoachLive() {
@@ -2938,14 +3615,14 @@ function stopCoachLive() {
 }
 
 function scanMarkScanning(t) {
-  const e = el('scan-' + t);
+  const e = _ensureScanChip(t);
   if (e) e.className = 'scan-tf scanning';
 }
 
 function scanMarkDone(t, dir, rsi, extra) {
-  const e = el('scan-' + t);
+  const e = _ensureScanChip(t);
   if (!e) return;
-  // H4/D1 non alimentés par le bridge Pine Script → afficher explicitement N/A
+  // Certains TFs peuvent ne pas Ãªtre alimentÃ©s par le bridge â†’ afficher explicitement N/A
   if (extra === 'NO_DATA') {
     e.className = 'scan-tf done neutre';
     e.innerHTML = t + '<br><span style="font-size:9px;opacity:0.5">N/A</span>';
@@ -2966,25 +3643,13 @@ function scanMarkDone(t, dir, rsi, extra) {
 // ── TF SELECTOR BUTTONS ───────────────────────────────────────────────
 
 function setActiveTF(tf) {
-  S.tf = tf;
-  document.querySelectorAll('.tf-btn[data-tf]').forEach(btn => {
-    btn.classList.toggle('active', btn.dataset.tf === tf);
-  });
-  // Met à jour le widget TV
-  _chartTf = null; // forcer rechargement
-  scheduleWidgetReload(S.symbol, tf);
+  // Adel strict: TF dÃ©finie par le bridge/serveur uniquement
+  _applyStrictUI();
 }
 
-document.querySelectorAll('.tf-btn[data-tf]').forEach(btn => {
-  btn.addEventListener('click', () => {
-    const tf = btn.dataset.tf;
-    setActiveTF(tf);
-    // Déclenche une analyse immédiate sur ce TF
-    if (!S.autoRunning) runAutoAnalysis();
-  });
-});
+// (supprimÃ©) listeners boutons TF: interdit par Adel strict
 
-// ── AUTO LOOP (clôture M1 toutes les 60s) ────────────────────────────
+// ── AUTO LOOP (clôture bougie) ───────────────────────────────────────
 
 let autoLoopTimer   = null;
 let candleTimer     = null;
@@ -2995,47 +3660,81 @@ let _zoneWatchTimer   = null; // Timer scan 5s quand prix dans la zone
 let _zoneVocalTimer   = null; // Timer vocal 10s quand en zone
 let _inZoneActive     = false; // Flag: prix actuellement dans la zone d'entrée
 
-// ── VOCAL 30s ARMÉ — parle toutes les 30s entre les scans M1 ─────────────────
+// ── VOCAL 30s ARMÉ — coach PRO multi-TF en temps réel ────────────────────────
 function _speakArmedStatus30s() {
   if (!S.armed || S.muted || S.position?.entry) return;
   const tf = S._lastMultiTF;
-  if (!tf || Object.keys(tf).length === 0) return;
+  const bd = S._lastBridgeData || {};
 
-  const _TF_LIST  = ['H1', 'M15', 'M5', 'M1'];
+  const _TF_LIST  = [];
   const _pxFmt    = S.price > 0 ? (S.price > 100 ? S.price.toFixed(2) : S.price.toFixed(5)) : null;
-  const _longC    = Object.values(tf).filter(d => d.direction === 'LONG').length;
-  const _shortC   = Object.values(tf).filter(d => d.direction === 'SHORT').length;
-  const _totalC   = Object.keys(tf).filter(k => !tf[k].noData).length;
-  const _isLong   = _longC > _shortC;
-  const _isShort  = _shortC > _longC;
-  const _bestDir  = _isLong ? 'LONG' : _isShort ? 'SHORT' : null;
-  const _bestC    = Math.max(_longC, _shortC);
-  const _conflict = !_isLong && !_isShort;
 
-  // Lecture TF en temps réel
-  const _vParts = _TF_LIST.map(tf2 => {
-    const d = tf[tf2];
-    if (!d || d.noData || !d.direction || d.direction === 'N/A') return null;
-    const _dir = d.direction === 'LONG' ? 'achat' : d.direction === 'SHORT' ? 'vente' : null;
-    if (!_dir) return null;
-    const _rsi = d.rsi > 0 ? ' RSI ' + Math.round(d.rsi) : '';
-    return tf2 + ' ' + _dir + _rsi;
+  // Collecter directions depuis multiTF scan OU bridge data
+  const _tfDirs = {};
+  _TF_LIST.forEach(t => {
+    const fromScan = tf && tf[t] && !tf[t].noData ? tf[t].direction : null;
+    // Source bridge data (autoritatif)
+    const _ltMap = {};
+    const _rsiMap = {};
+    const _lt = _ltMap[t];
+    const fromBridge = _lt
+      ? (_lt.includes('ACHAT') || _lt.includes('HAUSSIER') ? 'LONG'
+         : _lt.includes('VENTE') || _lt.includes('BAISSIER') ? 'SHORT' : 'NEUTRE')
+      : null;
+    _tfDirs[t] = { direction: fromScan || fromBridge, rsi: (tf && tf[t]?.rsi) || _rsiMap[t] };
+  });
+
+  const _known  = Object.entries(_tfDirs).filter(([,v]) => v.direction && v.direction !== 'NEUTRE');
+  const _longC  = _known.filter(([,v]) => v.direction === 'LONG').length;
+  const _shortC = _known.filter(([,v]) => v.direction === 'SHORT').length;
+  const _totalC = Object.keys(_tfDirs).length;
+  const _isLong  = _longC > _shortC;
+  const _isShort = _shortC > _longC;
+  const _bestDir = _isLong ? 'LONG' : _isShort ? 'SHORT' : null;
+  const _bestC   = Math.max(_longC, _shortC);
+  const _conflict = !_isLong && !_isShort && _longC > 0 && _shortC > 0;
+
+  // TF par TF description
+  const _tfDescriptions = _TF_LIST.map(t => {
+    const d = _tfDirs[t];
+    if (!d.direction) return null;
+    const _role = String(t || '');
+    const _dir  = d.direction === 'LONG' ? 'haussier' : d.direction === 'SHORT' ? 'baissier' : 'neutre';
+    const _rsi  = d.rsi ? `, RSI ${Math.round(d.rsi)}` : '';
+    return `${_role}: ${_dir}${_rsi}`;
   }).filter(Boolean);
 
-  // Phrase adaptée au contexte
+  // Contexte bridge enrichi
+  const _verdict = bd.verdict;
+  const _anticipation = bd.anticipation;
+  const _inTop = bd.inTop, _inBot = bd.inBot;
+  const _zoneTxt = _inTop ? 'Prix en zone de retournement SHORT.' : _inBot ? 'Prix en zone de retournement LONG.' : '';
+  const _anticTxt = _anticipation && _anticipation !== 'RAS'
+    ? (_anticipation.includes('LONG') ? 'Signal anticipé: retournement haussier.' : 'Signal anticipé: retournement baissier.')
+    : '';
+
+  // Construction du message vocal PRO
   let _msg = '';
-  if (_conflict || _bestC === 0) {
-    _msg = 'Marché en attente. Aucune direction dominante — je patiente.';
-  } else if (_bestC >= _totalC - 1) {
-    const _miss = _TF_LIST.find(t2 => tf[t2]?.direction && tf[t2].direction !== _bestDir && !tf[t2].noData);
-    _msg = 'Presque prêt. Il me manque ' + (_miss || 'un TF') + ' en ' + (_bestDir === 'LONG' ? 'achat' : 'vente') + '. Je guette.';
-  } else {
-    _msg = _bestC + ' sur ' + _totalC + ' TFs ' + (_bestDir === 'LONG' ? 'haussiers' : 'baissiers') + '. Je cherche encore.';
+  if (!_known.length) {
+    _msg = 'Aucune donnée technique. Vérifiez que Pine Script est actif sur TradingView.';
+  } else if (_conflict) {
+    const _longTFs  = _known.filter(([,v]) => v.direction === 'LONG').map(([k]) => k).join(', ');
+    const _shortTFs = _known.filter(([,v]) => v.direction === 'SHORT').map(([k]) => k).join(', ');
+    _msg = `Conflit entre les unités de temps. Haussier sur ${_longTFs}, baissier sur ${_shortTFs}. Je ne force rien. J'attends un alignement clair.`;
+  } else if (_bestC >= _totalC - 1 && _bestDir) {
+    const _missTF = _TF_LIST.find(t => _tfDirs[t]?.direction && _tfDirs[t].direction !== _bestDir);
+    const _missDesc = _missTF ? `, sauf ${_missTF} qui hésite` : '';
+    _msg = `Presque en place${_missDesc}. ${_bestC} sur ${_totalC} unités de temps ${_bestDir === 'LONG' ? 'haussières' : 'baissières'}.`;
+    if (_bestDir === 'LONG') _msg += ' J\'attends un retour sur niveau pour entrer en LONG avec un petit stop.';
+    else _msg += ' J\'attends le rejet sur résistance pour entrer en SHORT avec un risque maîtrisé.';
+  } else if (_bestDir) {
+    _msg = `${_bestC} unités ${_bestDir === 'LONG' ? 'haussières' : 'baissières'} sur ${_totalC}. Je construis ma conviction — pas encore prêt.`;
   }
 
-  const _pxPart  = _pxFmt ? S.symbol + ' à ' + _pxFmt + '. ' : '';
-  const _tfPart  = _vParts.length > 0 ? 'Je vois ' + _vParts.join(', ') + '. ' : '';
-  speak(_pxPart + _tfPart + _msg);
+  const _pxPart  = _pxFmt ? `${S.symbol} à ${_pxFmt}. ` : '';
+  const _tfPart  = _tfDescriptions.length > 0 ? `Je vois: ${_tfDescriptions.join('. ')}. ` : '';
+  const _ctxPart = [_zoneTxt, _anticTxt].filter(Boolean).join(' ');
+  speak(_pxPart + _tfPart + _msg + (_ctxPart ? ' ' + _ctxPart : ''));
 }
 
 function startArmedVocalLoop() {
@@ -3104,8 +3803,8 @@ function _checkZoneProximity() {
 function _startZoneWatch() {
   _stopZoneWatch();
   _inZoneActive = false;
-  _zoneWatchTimer = setInterval(_checkZoneProximity, 5000);
-  _zoneVocalTimer = setInterval(() => { if (_inZoneActive && !S.muted) _speakZoneWhy(); }, 10000);
+  _zoneWatchTimer = setInterval(_checkZoneProximity, 10000);
+  _zoneVocalTimer = setInterval(() => { if (_inZoneActive && !S.muted) _speakZoneWhy(); }, 20000);
   console.log('[ZONE-FAST] Zone watch démarré');
 }
 
@@ -3115,26 +3814,25 @@ function _stopZoneWatch() {
   _inZoneActive = false;
 }
 
-function candleSecondsLeft() {
-  const now = new Date();
-  return 60 - now.getSeconds();
-}
-
 function startCandleCountdown() {
   clearInterval(candleTimer);
   candleTimer = setInterval(() => {
-    const s = candleSecondsLeft();
+    const closeAt = Number(S.candleCloseAtMs || 0);
+    const msLeft = closeAt > 0 ? (closeAt - Date.now()) : NaN;
+    const s = isFinite(msLeft) ? Math.max(0, Math.ceil(msLeft / 1000)) : null;
     const cd = el('candleCountdown');
     if (cd) {
-      cd.textContent = 'M1: ' + s + 's';
-      cd.className = 'candle-cd' + (s <= 5 ? ' urgent' : '');
+      const tf = _normTf(S.tf) || '--';
+      cd.textContent = (s == null) ? (tf + ': --s') : (tf + ': ' + s + 's');
+      cd.className = 'candle-cd' + (s != null && s <= 5 ? ' urgent' : '');
     }
   }, 1000);
 }
 
 function stopCandleCountdown() {
   clearInterval(candleTimer);
-  setText('candleCountdown', 'M1: --s');
+  const tf = _normTf(S.tf) || '--';
+  setText('candleCountdown', tf + ': --s');
   const cd = el('candleCountdown');
   if (cd) cd.className = 'candle-cd';
 }
@@ -3147,19 +3845,78 @@ function startAutoLoop() {
   if (st) st.classList.add('active');
 
   startCandleCountdown();
-  runAutoAnalysis(); // Analyse immédiate
+  runAutoAnalysis(); // analyse immédiate
+  _scheduleNextAutoRun();
+}
 
-  // S'aligner sur la clôture M1 (seconde 0 de chaque minute)
-  const msToNextMinute = (60 - new Date().getSeconds()) * 1000 - new Date().getMilliseconds();
-  setTimeout(() => {
-    runAutoAnalysis();
-    autoLoopTimer = setInterval(runAutoAnalysis, 60000);
-  }, msToNextMinute);
+function _scheduleNextAutoRun() {
+  if (!S.autoLoop) return;
+  clearTimeout(autoLoopTimer);
+  const closeAt = Number(S.candleCloseAtMs || 0);
+  const msLeft = closeAt > 0 ? (closeAt - Date.now()) : NaN;
+  // Pas de fallback "minutes": si le bridge ne fournit pas candleCloseAt, on ne boucle pas.
+  if (!isFinite(msLeft) || msLeft <= 0 || msLeft > 3600000) return;
+  autoLoopTimer = setTimeout(async () => {
+    if (!S.autoLoop) return;
+    try { await runAutoAnalysis(); } catch(_) {}
+    _scheduleNextAutoRun();
+  }, msLeft + 150);
+}
+
+// ── RESET GLOBAL CLIENT — appelé après EXIT/SORTIR ────────────────────────────
+// Remet TOUS les états client à zéro sans reload. Obligation règle SORTIE = RESET GLOBAL.
+function _fullClientReset() {
+  // 1. Effacer la position
+  S.position = null;
+  S.armed = false;
+  S._preValidated = null;
+  S._armedSpeakCounter = 0;
+  S._armedStartPrice = null;
+  S.analysisReady = false;
+
+  // 2. Stopper tous les timers de position
+  if (typeof stopLiveMonitor === 'function') stopLiveMonitor();
+  if (typeof stopCoachLive === 'function') stopCoachLive();
+  if (typeof stopArmedVocalLoop === 'function') stopArmedVocalLoop();
+  if (typeof _stopZoneWatch === 'function') _stopZoneWatch();
+
+  // 3. Vider l'affichage position
+  if (typeof clearTradeLevels === 'function') clearTradeLevels();
+  ['posDir','posEntry','posSl','posTp','posPnl','posBe'].forEach(id => {
+    const e = el(id);
+    if (e) { e.textContent = '--'; e.className = e.className.replace(/\b(up|dn)\b/g,'').trim(); }
+  });
+  const posPanel = el('positionPanel');
+  if (posPanel) posPanel.style.display = 'none';
+
+  // 4. Réactiver les boutons ANALYSER / ENTRER
+  const btnA = el('btnAnalyse');
+  if (btnA) { btnA.disabled = true; btnA.innerHTML = '🔍 ANALYSER'; btnA.className = (btnA.className || '').replace(/\b(analyzing|armed)\b/g,'').trim(); }
+  const btnE = el('btnEntrer');
+  if (btnE) { btnE.disabled = true; btnE.innerHTML = '▶ ENTRER'; btnE.className = (btnE.className || '').replace(/\b(armed)\b/g,'').trim(); }
+
+  // 5. Désactiver SORTIR / BE / +TP (pas de position → pas d'action de gestion)
+  ['btnExit','btnBe','btnPartialTp'].forEach(id => {
+    const e = el(id);
+    if (e) { e.disabled = true; e.style.opacity = ''; }
+  });
+
+  // 6. Réinitialiser le bloc armé
+  const armedBlock = el('armedBlock');
+  if (armedBlock) armedBlock.style.display = 'none';
+
+  // 7. Message coach reset
+  const coachOut = el('coachOutput');
+  if (coachOut) {
+    coachOut.textContent = '✅ Position fermée — en attente du flux TradingView live.';
+    coachOut.style.borderColor = 'var(--muted)';
+  }
+  _applyStrictUI();
 }
 
 function stopAutoLoop() {
   S.autoLoop = false;
-  clearInterval(autoLoopTimer);
+  clearTimeout(autoLoopTimer);
   autoLoopTimer = null;
   stopCandleCountdown();
   const btn = el('btnAutoLoop');
@@ -3179,6 +3936,20 @@ async function runAutoAnalysis() {
   if (S_autoRunning) return; // anti-overlap
   S_autoRunning = true;
   const _runStart = Date.now(); // ⏱ mesure latence totale
+
+  // Adel strict: aucune analyse/ARM/ENTER sans contexte bridge live valide (symbol+tf+≤30s + pas de désync)
+  if (!_strictCtx().ok) { _applyStrictUI(); S_autoRunning = false; return; }
+  // Adel strict: aucun mode par défaut — doit venir du serveur/extension
+  const _m = String(S.mode || '').toUpperCase();
+  const _allowedModes = ['AUTO','SCALPER','SNIPER','SWING'];
+  if (!_m || !_allowedModes.includes(_m)) {
+    const co = el('coachOutput');
+    if (co) { co.textContent = '🚫 BLOQUÉ (Adel strict)\nMode manquant/invalide — attendre sync serveur.'; co.style.borderColor = 'var(--short)'; }
+    _applyStrictUI();
+    S_autoRunning = false;
+    return;
+  }
+  S.mode = _m;
 
   // ── FAST-PATH LATENCE: si armé + setup déjà pré-validé (< 90s) → entrer AVANT le scan ──
   // Réduit la latence d'entrée de ~2-4s à ~100ms (le scan est coûteux, l'entrée ne l'attend plus)
@@ -3215,7 +3986,7 @@ async function runAutoAnalysis() {
   // Déclenché que ce soit par clic manuel ou par le loop AUTO — toujours synchronisé
   fetch('/extension/command', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', 'X-Adel-Key': 'Adel' },
     body: JSON.stringify({ command: 'analyze', payload: { symbol: S.symbol, timeframe: S.tf, mode: S.mode, source: 'dashboard-auto' } })
   }).catch(() => {});
 
@@ -3236,157 +4007,206 @@ async function runAutoAnalysis() {
     // Affiche scan panel
     if (scanPanel) { scanPanel.classList.add('active'); scanReset(); }
     if (coachOut) {
-      coachOut.textContent = '⚡ Clôture M1 — scan ' + SCAN_TFS.length + ' timeframes...';
+      coachOut.textContent = '⚡ Analyse en cours...';
       coachOut.style.borderColor = 'var(--pending)';
     }
 
     // Scan multi-TF animé + collecte résultats
-    const multiTFResults = {};
+    // Multi-TF: doit venir du serveur/bridge (aucune liste TF codée en dur côté dashboard)
     let longCount = 0, shortCount = 0, neutreCount = 0;
+    let multiTFResults = {};
+    try {
+      const dBase = await api('/coach/realtime?symbol=' + encodeURIComponent(S.symbol) + '&tf=' + encodeURIComponent(S.tf) + (S.mode ? '&mode=' + encodeURIComponent(S.mode) : ''));
+      multiTFResults = dBase?.multiTFResults || dBase?.coach?.multiTFResults || dBase?.analysis?.multiTFResults || {};
+      // Si le serveur ne fournit pas multiTFResults, afficher au moins le TF courant (sans inventer d'autres TFs)
+      if ((!multiTFResults || Object.keys(multiTFResults).length === 0) && S.tf) {
+        const _agents = dBase?.agents || dBase?.coach?.agents || {};
+        const _ana = _agents.analysis || {};
+        const _raw = String(_ana.recommendation || dBase?.signal?.verdict || dBase?.execution?.decision || 'WAIT').toUpperCase();
+        multiTFResults = { [S.tf]: { direction: normDirection(_raw), signal: _raw } };
+      }
+    } catch (_) { multiTFResults = (S.tf ? { [S.tf]: { direction: 'WAIT', signal: 'WAIT' } } : {}); }
 
-    // TFs bridgés (RSI distinct par TF) vs TFs non alimentés
-    const TF_BRIDGED    = ['M1', 'M5', 'M15', 'H1'];
-    const TF_NO_BRIDGE  = ['H4', 'D1']; // bridge Pine ne couvre pas ces TF → N/A explicite
-
-    for (const tfScan of SCAN_TFS) {
+    scanReset();
+    const _tfsToShow = Object.keys(multiTFResults || {});
+    for (const tfScan of _tfsToShow) {
       scanMarkScanning(tfScan);
-
-      // H4/D1 : pas de données per-TF depuis le bridge — marquer N/A, ne pas dupliquer M5
-      if (TF_NO_BRIDGE.includes(tfScan)) {
-        if (!S.armed) await new Promise(r => setTimeout(r, 120)); // skip délai si armé
-        scanMarkDone(tfScan, 'NEUTRE', null, 'NO_DATA');
-        multiTFResults[tfScan] = { direction: 'N/A', signal: 'N/A', noData: true };
-        neutreCount++;
-        continue;
-      }
-
-      try {
-        const d = await api('/coach/realtime?symbol=' + S.symbol + '&tf=' + tfScan + '&mode=' + S.mode);
-        const coach = d?.coach || {};
-        const exec  = d?.execution || coach.execution || {};
-        // SOURCE IDENTIQUE EXTENSION: analysis.recommendation (server déterministe)
-        const _agents = d?.agents || coach?.agents || {};
-        const _ana    = _agents.analysis || {};
-        const rawS  = String(_ana.recommendation || coach.signal?.verdict || exec.decision || 'WAIT').toUpperCase();
-        const isLs  = rawS.includes('BUY') || rawS.includes('LONG');
-        const isSs  = rawS.includes('SELL') || rawS.includes('SHORT');
-        const dir   = isLs ? 'LONG' : isSs ? 'SHORT' : 'NEUTRE';
-        const _tfKey = 'rsi_' + tfScan.toLowerCase();
-        const rsiPerTf = coach.signal?.stats?.[_tfKey] ?? null;
-        const _strength = Number(_ana.strength || _ana.confidence || 0);
-        const _srvCE = exec.canEnter === true;
-        scanMarkDone(tfScan, dir, rsiPerTf);
-        multiTFResults[tfScan] = { direction: dir, signal: rawS, rsi: rsiPerTf, strength: _strength, canEnter: _srvCE };
-        if (isLs) longCount++; else if (isSs) shortCount++; else neutreCount++;
-      } catch (_) {
-        scanMarkDone(tfScan, 'NEUTRE', null);
-        multiTFResults[tfScan] = { direction: 'NEUTRE', signal: 'WAIT', strength: 0, canEnter: false };
-        neutreCount++;
-      }
-      // Délai inter-TF: réduit à 50ms si armé (normal: 280ms) — compense latence d'entrée
-      await new Promise(r => setTimeout(r, S.armed ? 50 : 280));
+      const r = multiTFResults[tfScan] || {};
+      const dir = normDirection(r.direction || r.signal);
+      scanMarkDone(tfScan, dir, r.rsi ?? null);
+      if (dir === 'LONG') longCount++; else if (dir === 'SHORT') shortCount++; else neutreCount++;
     }
     S._lastScanMs  = Date.now() - _runStart; // mesure durée scan
     S._lastMultiTF = Object.assign({}, multiTFResults); // cache pour vocal 30s
 
     // ── HIÉRARCHIE MODE — identique extension ────────────────────────────────
-    // Context TF doit être directionnel + aligné avec Validation TF → canEnter valide
-    const _scanMode = String(S.mode || 'AUTO').toUpperCase();
-    const _modeHier = {
-      SWING:   { context: ['H1','H4'], validation: ['M15'] },
-      SNIPER:  { context: ['M5'],      validation: ['M1']  },
-      SCALPER: { context: ['M15'],     validation: ['M5']  },
-      AUTO:    { context: ['H1','H4'], validation: ['M15'] }
-    };
-    const _hier = _modeHier[_scanMode] || _modeHier.AUTO;
-    const _ctxDirs = _hier.context.map(tf => multiTFResults[tf]?.direction).filter(Boolean);
-    const _valDirs = _hier.validation.map(tf => multiTFResults[tf]?.direction).filter(Boolean);
-    const _ctxLong  = _ctxDirs.some(d => d === 'LONG');
-    const _ctxShort = _ctxDirs.some(d => d === 'SHORT');
-    const _ctxConfl = _ctxLong && _ctxShort;
-    const _ctxDir   = !_ctxConfl && _ctxLong ? 'LONG' : !_ctxConfl && _ctxShort ? 'SHORT' : null;
-    const _valDir   = _valDirs.find(d => d !== 'NEUTRE') || null;
-    const _hierarchyOk  = !!(_ctxDir && _valDir && _ctxDir === _valDir);
-    const _anyServerCE  = Object.values(multiTFResults).some(r => r.canEnter);
-    // canEnter hiérarchique: context+validation alignés ET serveur confirme canEnter sur au moins 1 TF
-    let _hierarchyCanEnter = _hierarchyOk && _anyServerCE;
-    const _hierarchyDir = _hierarchyOk ? _ctxDir : (longCount >= 4 ? 'LONG' : shortCount >= 4 ? 'SHORT' : null);
+    // Adel strict: pas de hiérarchie TF codée en dur côté dashboard.
+    const _hierarchyOk  = false;
+    let _hierarchyCanEnter = false;
+    const _hierarchyDir = null;
 
     // Résumé confluence
-    const total = SCAN_TFS.length;
-    const confluenceDir = _hierarchyDir || (longCount > shortCount && longCount >= 3 ? 'LONG tendance' : shortCount > longCount && shortCount >= 3 ? 'SHORT tendance' : 'NEUTRE');
-    const _hierLabel = _hierarchyOk ? ' [' + _scanMode + ' OK]' : ' [hiérachie en attente]';
-    const summaryText = longCount + '/' + total + ' ▲ · ' + shortCount + '/' + total + ' ▼ · ' + neutreCount + '/' + total + ' — → ' + confluenceDir + _hierLabel;
+    const total = Object.keys(multiTFResults || {}).length;
+    const confluenceDir = total ? (longCount > shortCount ? 'LONG' : shortCount > longCount ? 'SHORT' : 'WAIT') : 'WAIT';
+    const summaryText = total
+      ? (longCount + '/' + total + ' ▲ · ' + shortCount + '/' + total + ' ▼ · ' + neutreCount + '/' + total + ' — → ' + confluenceDir)
+      : 'Multi-TF indisponible';
     setText('scanSummary', summaryText);
 
-    // Clôture M1 — annonce vocale immédiate des TFs (avant d'attendre l'IA)
+    // Annonce vocale synthétique
     if (!S.muted) {
-      const dirQuick = longCount >= 4 ? 'Long dominant' : shortCount >= 4 ? 'Short dominant'
-        : longCount > shortCount ? 'tendance Long' : shortCount > longCount ? 'tendance Short' : 'mixte';
-      speak('Clôture bougie. ' + S.symbol + ' — ' + longCount + ' Long, ' + shortCount + ' Short sur ' + total + ' unités. ' + dirQuick + '. Analyse en cours.');
+      speak('Analyse. ' + S.symbol + ' — ' + longCount + ' Long, ' + shortCount + ' Short sur ' + (total || '?') + ' unités. Verdict: ' + confluenceDir + '.');
     }
 
-    // Coaching IA avec contexte multi-TF complet
-    if (coachOut) coachOut.textContent = '🧠 IA analyse les ' + total + ' timeframes...';
+    // ── AGENT LOCAL STRICT — /coach/analyser-live (PRIMAIRE — SOURCE DE VÉRITÉ) ─
+    // RÈGLE ADEL STRICT: système complet ou rien. Si composant manque → BLOQUÉ.
+    // RÈGLE UNE DIRECTION: position active opposite → signal BLOQUÉ.
+    // SL/TP = zones structurelles réelles uniquement.
+    if (coachOut) coachOut.textContent = '🧠 Agent Adel — analyse bridge complète...';
+    let agentResp = null;
+    try {
+      agentResp = await api('/coach/analyser-live?symbol=' + encodeURIComponent(S.symbol) + '&mode=' + encodeURIComponent(S.mode));
+    } catch(_) {}
 
+    const _agentOk      = agentResp?.ok === true;
+    const _agentAna     = agentResp?.agentAnalysis || {};
+    const _agentDir     = String(agentResp?.direction || _agentAna.direction || 'WAIT').toUpperCase();
+    const _agentConf    = _agentAna.confidence || 'NONE';
+    const _agentBlocked = _agentAna.blocked === true || !_agentOk;
+    const _agentMissing = _agentAna.missingComponents || [];
+    const _agentJustif  = _agentAna.justification || '';
+    const _agentLevels  = agentResp?.levels || null;
+    const _agentReason  = agentResp?.reason || '';
+    const _agentActivPos= agentResp?.activePosition || null; // position active côté serveur
+    const _agentConflict= agentResp?.context?.directionConflict === true;
+    const _agentCoheErr = agentResp?.context?.coherenceError || null;
+
+    // Coaching IA avec contexte multi-TF complet (secondaire — narratif uniquement)
     const coachResp = await api('/ai/coach', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        symbol: S.symbol,
-        timeframe: S.tf,
-        mode: 'analyze',
-        execMode: S.mode,
-        price: S.price,
-        multiTF: multiTFResults
+        symbol: S.symbol, timeframe: S.tf, mode: 'analyze',
+        execMode: S.mode, price: S.price, multiTF: multiTFResults
       })
     });
 
-    const coachText = coachResp.response || 'Analyse disponible.';
-    const signal    = coachResp.signal || (longCount > shortCount ? 'LONG' : shortCount > longCount ? 'SHORT' : 'WAIT');
-    const isLong    = signal.includes('LONG') || signal.includes('BUY');
-    const isShort   = signal.includes('SHORT') || signal.includes('SELL');
+    // Signal = agent strict en priorité absolue (pas l'IA narrative)
+    const signal  = _agentDir !== 'WAIT' ? _agentDir
+      : coachResp.signal || (longCount > shortCount ? 'LONG' : shortCount > longCount ? 'SHORT' : 'WAIT');
+    const isLong  = signal === 'LONG' || signal.includes('BUY');
+    const isShort = signal === 'SHORT' || signal.includes('SELL');
 
     S.lastMetrics = coachResp.metrics || {};
-    // Enrichir avec ATR depuis instantTrade si disponible
     if (coachResp.instantTrade?.atr) S.lastMetrics.atr = coachResp.instantTrade.atr;
-    // Stocker zone d'entrée pour zone-watch (accélérateur 5s)
-    if (coachResp.instantTrade?.entry > 0) S._lastEntryZone = coachResp.instantTrade.entry;
     S._lastZoneConflicts = coachResp.execution?.conflictReasons || [];
     S.lastSignal  = signal;
 
-    // Afficher coaching
-    // Couleur directionnelle SEULEMENT si canEnter=true — sinon neutre (conflit ou setup non formé)
-    const _analyseCanEnter = coachResp.canEnter === true;
-    const _analyseConflict = !!(S.lastConflict); // flag propagé depuis refreshAll
+    // canEnter = agent strict seul (règle non modifiable)
+    const _agentCanEnter   = _agentOk && agentResp?.canEnter === true;
+    const _analyseConflict = _agentConflict || !!(S.lastConflict);
+
+    // ── AFFICHAGE DASHBOARD — coachOutput = vérité structurelle complète ──────
     if (coachOut) {
-      const timestamp = new Date().toLocaleTimeString('fr-FR');
-      coachOut.textContent = '[' + timestamp + '] ' + coachText;
-      // Border couleur : orange si conflit, vert/rouge si exécutable, gris sinon
-      coachOut.style.borderColor = _analyseConflict ? 'var(--wait)'
-        : _analyseCanEnter ? (isLong ? 'var(--long)' : isShort ? 'var(--short)' : 'var(--muted)')
+      const ts = new Date().toLocaleTimeString('fr-FR');
+
+      // Ligne SL/TP structurel avec sources de zones
+      let _lvlLine = '';
+      if (_agentLevels?.valid) {
+        _lvlLine = `SL: ${_agentLevels.sl} [${_agentLevels.slSource}] ${_agentLevels.slPips}p`
+          + ` | TP: ${_agentLevels.tp} [${_agentLevels.tpSource || '?'}] ${_agentLevels.tpPips}p`
+          + ` | RR: ${_agentLevels.rrRatio}:1`;
+      } else if (_agentLevels && !_agentLevels.valid) {
+        _lvlLine = `SL/TP BLOQUÉ: ${_agentLevels.blockReason || 'zone structurelle manquante'}`;
+      }
+
+      // Ligne cohérence prix/zone
+      const _coheErrLine = _agentCoheErr ? `INCOHÉRENCE: ${_agentCoheErr}` : '';
+
+      // Ligne position active (si serveur détecte position existante)
+      const _posLine = _agentActivPos
+        ? `POSITION ACTIVE: ${_agentActivPos.direction} sur ${_agentActivPos.key} — UNE SEULE DIRECTION`
+        : '';
+
+      // Statut bridge + Pine
+      const _statusLine = _agentOk
+        ? `Bridge: OK (${agentResp?.context?.bridgeAge || '?'}) | Pine: ${agentResp?.context?.pineActive ? 'ACTIF ✓' : 'INACTIF ✗'} | Ticks: ${agentResp?.context?.swingTicks || 0}`
+        : `Bridge: ${agentResp?.error || 'OFFLINE'}`;
+
+      const _lines = [
+        `[${ts}] ══════════ AGENT ADEL STRICT ══════════`,
+        _agentBlocked
+          ? `🔴 BLOQUÉ — ${_agentMissing.length} composant(s) manquant(s)`
+          : _analyseConflict
+            ? `⚠️ CONFLIT DIRECTION — ${_agentReason}`
+            : `${_agentDir === 'LONG' ? '🟢' : _agentDir === 'SHORT' ? '🔴' : '⬜'} ${_agentDir} [${_agentConf}] — ${_agentCanEnter ? 'ENTRÉE VALIDÉE' : 'WAIT'}`,
+        _posLine,
+        '',
+        _agentJustif,
+        '',
+        _lvlLine,
+        _coheErrLine,
+        _statusLine,
+        `══════════════════════════════════════`,
+      ].filter(l => l !== undefined && l !== null && l !== '');
+
+      coachOut.textContent = _lines.join('\n');
+      coachOut.style.borderColor = _agentBlocked ? '#ef4444'
+        : _agentCoheErr ? '#ef4444'
+        : _analyseConflict ? 'var(--wait)'
+        : _agentCanEnter ? (isLong ? 'var(--long)' : isShort ? 'var(--short)' : 'var(--muted)')
         : 'var(--muted)';
       coachOut.scrollTop = coachOut.scrollHeight;
     }
 
-    // Side panel signal — couleur directionnelle uniquement si exécutable et non conflicté
+    // ── GITHUB AGENT — analyse en temps réel (si armé + configuré) ──────────────
+    // S'exécute en parallèle après l'agent strict — enrichit le coachOutput
+    if (S.armed) {
+      (async () => {
+        try {
+          const ghResp = await fetch('/api/github-agent/analyse?symbol=' + encodeURIComponent(S.symbol));
+          if (!ghResp.ok) return;
+          const gh = await ghResp.json();
+          if (!gh || !gh.ok) return;
+          if (!coachOut) return;
+          // Ajouter la section GitHub Agent au bas du coachOutput
+          const _ts = new Date().toLocaleTimeString('fr-FR');
+          const _ghDir = gh.direction || 'WAIT';
+          const _ghLine = `\n──── GITHUB AGENT [${_ts}] ────`
+            + `\n${_ghDir === 'LONG' ? '🟢' : _ghDir === 'SHORT' ? '🔴' : '⬜'} ${gh.analysis || 'Aucune analyse disponible'}`;
+          coachOut.textContent += _ghLine;
+          coachOut.scrollTop = coachOut.scrollHeight;
+          // Mettre à jour badge GitHub
+          const badge = document.getElementById('githubBadge');
+          if (badge) {
+            badge.textContent = '⬤ GitHub AGENT ON';
+            badge.style.background = 'rgba(34,197,94,0.2)';
+            badge.style.color = '#4ade80';
+          }
+        } catch (_ghErr) {}
+      })();
+    }
+
+    // Side panel signal — AGENT ADEL STRICT = source de vérité
     const sideSignalEl = el('sideSignal');
     if (sideSignalEl && !S.position) {
-      // Ne pas écraser sideSignal si une position active est déjà affichée
-      sideSignalEl.textContent = _analyseConflict ? '⚠️ CONFLIT'
-        : _analyseCanEnter ? (isLong ? '⚡ LONG' : isShort ? '⚡ SHORT' : '— NEUTRE')
-        : (isLong ? '🔎 LONG' : isShort ? '🔎 SHORT' : '— NEUTRE');
-      sideSignalEl.style.color = _analyseConflict ? 'var(--wait)'
-        : _analyseCanEnter ? (isLong ? 'var(--long)' : isShort ? 'var(--short)' : 'var(--muted)')
+      sideSignalEl.textContent = _agentBlocked ? '🔴 BLOQUÉ'
+        : _analyseConflict ? '⚠️ CONFLIT'
+        : _agentCanEnter ? (isLong ? '⚡ LONG' : isShort ? '⚡ SHORT' : '— NEUTRE')
+        : _agentDir !== 'WAIT' ? (isLong ? '🔎 LONG' : isShort ? '🔎 SHORT' : '— NEUTRE')
+        : '— WAIT';
+      sideSignalEl.style.color = _agentBlocked ? '#ef4444'
+        : _analyseConflict ? 'var(--wait)'
+        : _agentCanEnter ? (isLong ? 'var(--long)' : isShort ? 'var(--short)' : 'var(--muted)')
         : 'var(--muted)';
     }
 
-    // ENTRER button — canEnter = hiérarchie mode serveur (identique extension)
-    // coachResp.canEnter (IA) est un fallback si la hiérarchie n'a pas pu conclure
-    const canEnter = _hierarchyCanEnter || (coachResp.canEnter === true && _hierarchyOk);
+    // ENTRER button — AGENT ADEL STRICT décide (pas IA seule ni hiérarchie seule)
+    // canEnter = agent complet ET canEnter=true ET pas de conflit (règle NON MODIFIABLE)
+    const canEnter = _agentCanEnter && (_hierarchyCanEnter || !_hierarchyOk);
     S.analysisReady = canEnter;
 
-    // ── PRÉ-VALIDATION LATENCE: stocker le setup validé pour fast-path au prochain M1 ──
+    // ── PRÉ-VALIDATION LATENCE: stocker le setup validé pour fast-path au prochain tick ──
     if (canEnter && (isLong || isShort) && S.armed && !_analyseConflict) {
       S._preValidated = { canEnter: true, direction: isLong ? 'LONG' : 'SHORT', price: S.price, ts: Date.now() };
     } else if (S.armed) {
@@ -3481,21 +4301,18 @@ async function runAutoAnalysis() {
           const _pxFmt    = S.price > 0 ? (S.price > 100 ? S.price.toFixed(2) : S.price.toFixed(5)) : '—';
 
           // ── Raison du blocage — précise et actionnable ──
+          const _anyServerCE = Object.values(multiTFResults || {}).some(r => r && r.canEnter === true);
           const _blockReason = _analyseConflict
-            ? 'conflit TF — j\'attends l\'alignement'
-            : !_ctxDir
-              ? 'contexte non aligné — H1+M15 ne s\'accordent pas encore'
-              : !_valDir
-                ? 'validation manquante — j\'attends ' + _hier.validation.join(' + ')
-                : _ctxDir !== _valDir
-                  ? 'tension contexte ' + _ctxDir + ' vs validation ' + _valDir + ' — je patiente'
-                  : !_anyServerCE
-                    ? 'serveur pas prêt — canEnter en cours de validation'
-                    : 'conditions en alignement — presque prêt';
+            ? 'conflit directionnel — j\'attends l\'alignement'
+            : (!isLong && !isShort)
+              ? 'pas de direction claire — j\'attends'
+              : !_anyServerCE
+                ? 'serveur pas prêt — validation en cours'
+                : 'conditions en cours — presque prêt';
 
           // ── Tableau TF — lecture structurée ──────────────────────────────────
-          const _TF_LIST = ['H1', 'M15', 'M5', 'M1'];
-          const _TF_ROLES = { H1: 'contexte', M15: 'validation', M5: 'timing', M1: 'entrée' };
+          const _TF_LIST = Object.keys(multiTFResults || {}).filter(tf => !(multiTFResults[tf] && multiTFResults[tf].noData));
+          const _TF_ROLES = {};
           const _tfLines = _TF_LIST.map(tf => {
             const d = multiTFResults[tf];
             if (!d || d.noData || !d.direction || d.direction === 'N/A') return '  ' + tf.padEnd(4) + '│ —';
@@ -3537,7 +4354,7 @@ async function runAutoAnalysis() {
               '⏳ ' + _blockReason,
               '💬 ' + _waitStr,
               '',
-              '⏱ Check automatique à chaque clôture M1',
+              '⏱ Check automatique à chaque clôture bougie',
               '━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━',
               '⚡ Scan: ' + (S._lastScanMs ? S._lastScanMs + 'ms' : '—')
                 + (S._lastEntryLatencyMs ? ' · Dernière entrée: ' + S._lastEntryLatencyMs + 'ms' : '')
@@ -3593,31 +4410,28 @@ async function runAutoAnalysis() {
             } else if (_bestCount >= _totalTF - 1) {
               // Presque prêt — très proche
               const _lastTF = _TF_LIST.find(tf => multiTFResults[tf]?.direction && multiTFResults[tf].direction !== _bestDir && !multiTFResults[tf].noData);
-              const _rsiH1 = multiTFResults['H1']?.rsi;
-              const _rsiM15 = multiTFResults['M15']?.rsi;
-              const _rsiInfo = (_rsiH1 > 0 && _rsiM15 > 0)
-                ? ' RSI H1 ' + Math.round(_rsiH1) + ', RSI M15 ' + Math.round(_rsiM15) + '.'
+              const _rsiVals = Object.values(multiTFResults || {}).map(d => Number(d?.rsi || 0)).filter(v => v > 0);
+              const _rsiInfo = _rsiVals.length
+                ? ' RSI moyen ' + Math.round(_rsiVals.reduce((a,b) => a + b, 0) / _rsiVals.length) + '.'
                 : '';
               _vState = (_bestCount) + ' sur ' + _totalTF + ' unités alignées ' + (_bestDir === 'LONG' ? 'haussier' : 'baissier') + '.' + _rsiInfo;
               _vPlan  = 'Je suis presque prêt. J\'attends que ' + (_lastTF || 'le dernier TF') + ' confirme en ' + (_bestDir === 'LONG' ? 'achat' : 'vente') + ' pour déclencher l\'entrée.';
             } else if (_bestCount >= 2) {
               // En cours d'alignement
               const _missingTFs = _TF_LIST.filter(tf => multiTFResults[tf]?.direction && multiTFResults[tf].direction !== _bestDir && !multiTFResults[tf].noData);
-              const _rsiH1 = multiTFResults['H1']?.rsi;
-              const _rsiM15 = multiTFResults['M15']?.rsi;
-              const _rsiInfo = _rsiH1 > 0 ? ' H1 RSI ' + Math.round(_rsiH1) + '.' : '';
+              const _rsiVals2 = Object.values(multiTFResults || {}).map(d => Number(d?.rsi || 0)).filter(v => v > 0);
+              const _rsiInfo = _rsiVals2.length
+                ? ' RSI moyen ' + Math.round(_rsiVals2.reduce((a,b) => a + b, 0) / _rsiVals2.length) + '.'
+                : '';
               _vState = _bestCount + ' sur ' + _totalTF + ' TFs alignés ' + (_bestDir === 'LONG' ? 'haussier' : 'baissier') + '.' + _rsiInfo;
               _vPlan  = 'Je cherche l\'alignement complet. Il me faut encore '
                 + (_missingTFs.length === 1 ? _missingTFs[0] : _missingTFs.join(' et '))
                 + ' en ' + (_bestDir === 'LONG' ? 'achat' : 'vente') + '. Je reste en surveillance.';
             } else {
               // Début ou situation neutre
-              const _rsiH1 = multiTFResults['H1']?.rsi;
-              const _h1Dir = multiTFResults['H1']?.direction;
-              const _h1Info = _h1Dir && _h1Dir !== 'N/A' && _h1Dir !== 'NEUTRE'
-                ? 'H1 ' + (_h1Dir === 'LONG' ? 'haussier' : 'baissier') + (_rsiH1 > 0 ? ' RSI ' + Math.round(_rsiH1) : '') + '. '
-                : '';
-              _vState = _h1Info + 'Peu de TFs alignés pour l\'instant.';
+              const _rsiVals3 = Object.values(multiTFResults || {}).map(d => Number(d?.rsi || 0)).filter(v => v > 0);
+              const _rsiInfo3 = _rsiVals3.length ? (' RSI moyen ' + Math.round(_rsiVals3.reduce((a,b) => a + b, 0) / _rsiVals3.length) + '.') : '';
+              _vState = 'Peu de TFs alignés pour l\'instant.' + _rsiInfo3;
               _vPlan  = 'Je surveille. Le marché se construit. J\'attends la confluence avant d\'agir.';
             }
 
@@ -3673,6 +4487,7 @@ async function runAutoAnalysis() {
 
 el('btnAnalyse').addEventListener('click', async () => {
   const btn = el('btnAnalyse');
+  if (!_strictCtx().ok) { _applyStrictUI(); return; }
   btn.innerHTML = '<span class="spinner"></span>ANALYSE...';
   btn.classList.add('analyzing');
   btn.disabled = true;
@@ -3705,9 +4520,16 @@ async function executeArmedEntry(operatorOverride) {
   await new Promise(r => setTimeout(r, 100));
 
   try {
+    if (operatorOverride === true) {
+      _applyStrictUI();
+      const co = el('coachOutput');
+      if (co) { co.textContent = '🚫 FORCER ENTRÉE interdit (Adel strict).'; co.style.borderColor = 'var(--short)'; }
+      return false;
+    }
+    if (!_strictCtx().ok || !S.mode) { _applyStrictUI(); return false; }
     // Vérifier news
     try {
-      const newsCheck = await api('/news?symbol=' + S.symbol + '&limit=5');
+      const newsCheck = await api('/news?symbol=' + encodeURIComponent(S.symbol) + '&limit=5');
       const blocking = (newsCheck.events || newsCheck.items || [])
         .filter(e => String(e.impact||'').toUpperCase() === 'HIGH' && e.minutesAway != null && Math.abs(e.minutesAway) < 15);
       if (blocking.length > 0) {
@@ -3728,9 +4550,12 @@ async function executeArmedEntry(operatorOverride) {
     });
 
     if (!result.ok) {
-      // Refus robot — afficher raison + proposer FORCER si pas déjà en mode opérateur
+      // Adel strict: aucun forçage opérateur / aucun bouton de bypass
       const reasons = (result.conflictReasons || []).join('\n• ');
       const mainMsg = result.message || result.error || 'Setup pas encore validé';
+      const out = el('coachOutput');
+      if (out) { out.textContent = '⏸ ' + mainMsg + (reasons ? ('\n• ' + reasons) : ''); out.style.borderColor = '#f59e0b'; }
+      return false;
 
       if (result.canForce && !operatorOverride) {
         // Afficher le bouton FORCER L'ENTRÉE
@@ -3940,72 +4765,97 @@ el('btnEntrer').addEventListener('click', async () => {
   }
 });
 
-// ── EXIT BUTTON ────────────────────────────────────────────────────────
+// ── EXIT BUTTON — fermeture INSTANTANÉE (optimiste) ────────────────────────
 
 el('btnExit').addEventListener('click', async () => {
+  const sym = S.serverSymbol || S.symbol;
+  const tf  = S.serverTf || S.tf;
+  if (!sym || !tf) { _applyStrictUI(); return; }
+  const exitPrice = S.price > 0 ? S.price : null;
+  const pos       = S.position || null;
+  S._lastExitAt = Date.now();
+
+  // ── FERMETURE OPTIMISTE — réponse immédiate, pas d'attente réseau ──────
+  const _bExit = el('btnExit'), _bBe = el('btnBe'), _bPtp = el('btnPartialTp');
+  if (_bExit) { _bExit.disabled = true; _bExit.style.opacity = '0.4'; }
+  if (_bBe)   { _bBe.disabled   = true; _bBe.style.opacity   = '0.4'; }
+  if (_bPtp)  { _bPtp.disabled  = true; _bPtp.style.opacity  = '0.4'; }
+  const _pdEl = el('posDir');
+  if (_pdEl) { _pdEl.textContent = '-- EN ATTENTE --'; _pdEl.className = 'pos-val'; _pdEl.style.color = ''; }
+  el('coachOutput').textContent = '■ Fermeture en cours...' + (exitPrice ? ' @ ' + exitPrice.toFixed(2) : '');
+  speak('Sortie de position. Capital protégé.');
+
   try {
-    // Capturer le prix au moment exact du clic — avant tout appel réseau
-    const exitPrice = S.price > 0 ? S.price : null;
-    const pos       = S.position || null;
-    S._lastExitAt = Date.now(); // guard race condition position-sync
-
     const r = await api('/coach/trade-action', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ symbol: S.symbol, timeframe: S.tf, action: 'EXIT' })
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ symbol: sym, timeframe: tf, action: 'EXIT' })
     });
-
     if (!r.ok) {
-      el('coachOutput').textContent = '❌ ' + (r.error || 'erreur exit');
+      el('coachOutput').textContent = '❌ Fermeture: ' + (r.error || 'erreur serveur — position peut rester ouverte');
+      await refreshAll();
       return;
     }
-
-    // Enregistrer dans le journal uniquement si on a une position complète
-    // (entry + sl + tp viennent de S.position, exitPrice du prix capturé au clic)
-    if (pos && pos.entry > 0 && pos.sl > 0 && pos.tp > 0) {
-      try {
-        const openedAt = pos.openedAt || null;
-        const durationMin = openedAt ? Math.round((Date.now() - new Date(openedAt).getTime()) / 60000) : null;
-        await fetch('/coach/close-summary', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            symbol:      S.symbol,
-            direction:   pos.direction,
-            entry:       pos.entry,
-            exitPrice:   exitPrice,
-            sl:          pos.sl,
-            tp:          pos.tp,
-            durationMin: durationMin,
-            openedAt:    openedAt
-          })
-        });
-      } catch (_) { /* journal non-bloquant — la fermeture est déjà appliquée */ }
+    // Journal (non-bloquant)
+    if (pos && pos.entry > 0 && pos.sl > 0) {
+      fetch('/coach/close-summary', {
+        method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Adel-Key': 'Adel' },
+        body: JSON.stringify({ symbol: sym, direction: pos.direction, entry: pos.entry, exitPrice, sl: pos.sl, tp: pos.tp || 0 })
+      }).catch(() => {});
     }
-
     const timeStr = new Date().toLocaleTimeString('fr-FR');
-    el('coachOutput').textContent = '🚪 Position fermée manuellement — ' + timeStr + (exitPrice ? ' @ ' + exitPrice.toFixed(2) : '');
-    el('coachOutput').style.borderColor = 'var(--muted)';
-    speak('Position fermée. Capital protégé.');
-    S.position = null;
-    stopLiveMonitor();
-    clearTradeLevels();
-    if (typeof stopCoachLive === 'function') stopCoachLive();
-    const posDirEl = el('posDir');
-    if (posDirEl) { posDirEl.textContent = '-- EN ATTENTE --'; posDirEl.className = 'pos-val'; posDirEl.style.color = ''; }
-    setTimeout(refreshStats, 1000);
+    el('coachOutput').textContent = '■ EXIT demandé — ' + timeStr + (exitPrice ? ' @ ' + exitPrice.toFixed(2) : '') + '\nAttente confirmation serveur (SSE).';
+
+    // ── RESET GLOBAL CLIENT — forcer tous les états à zéro sans reload ──────
+    _fullClientReset();
+
     await refreshAll();
+    refreshStats();
   } catch (e) { el('coachOutput').textContent = '❌ Erreur exit: ' + e.message; }
+});
+
+// ── BREAKEVEN BUTTON ────────────────────────────────────────────────────────
+
+el('btnBe').addEventListener('click', async () => {
+  try {
+    const r = await api('/coach/trade-action', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ symbol: S.symbol, timeframe: S.tf, action: 'BE' })
+    });
+    if (r.ok) {
+      el('coachOutput').textContent = '▲ SL déplacé au breakeven.';
+      speak('Stop au coût. Gains sécurisés.');
+      await refreshAll();
+    } else { el('coachOutput').textContent = '❌ ' + (r.error || 'erreur BE'); }
+  } catch (e) { el('coachOutput').textContent = '❌ ' + e.message; }
+});
+
+// ── +TP PARTIEL BUTTON ──────────────────────────────────────────────────────
+
+el('btnPartialTp').addEventListener('click', async () => {
+  try {
+    const r = await api('/coach/trade-action', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ symbol: S.symbol, timeframe: S.tf, action: 'TAKE_PROFIT' })
+    });
+    if (r.ok) {
+      el('coachOutput').textContent = '+TP partiel appliqué. SL sécurisé.';
+      speak('Prise de bénéfice partielle. Position réduite.');
+      await refreshAll();
+    } else { el('coachOutput').textContent = '❌ ' + (r.error || 'erreur +TP'); }
+  } catch (e) { el('coachOutput').textContent = '❌ ' + e.message; }
 });
 
 // ── WAIT BUTTON ────────────────────────────────────────────────────────
 
 el('btnWait').addEventListener('click', async () => {
+  const sym = S.serverSymbol || S.symbol;
+  const tf  = S.serverTf || S.tf;
+  if (!sym || !tf || !_strictCtx().ok) { _applyStrictUI(); return; }
   try {
     await api('/coach/trade-action', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ symbol: S.symbol, timeframe: S.tf, action: 'WAIT' })
+      body: JSON.stringify({ symbol: sym, timeframe: tf, action: 'WAIT' })
     });
     el('coachOutput').textContent = '⏳ Mode ATTENTE activé — surveillance continue.';
     speak('Mode attente activé.');
@@ -4024,7 +4874,7 @@ function toggleMute() {
   // Sync mute avec extension via serveur
   fetch('/set-mute', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', 'X-Adel-Key': 'Adel' },
     body: JSON.stringify({ muted: S.muted, source: 'dashboard' })
   }).catch(() => {});
 }
@@ -4045,29 +4895,78 @@ if (btnForce) {
   });
 }
 
+// ── FORCER FERMETURE D'URGENCE ──────────────────────────────────────────
+// Visible quand S.position existe mais serveur dit entered=false (désync après reboot)
+// OU quand EXIT normal échoue 3 fois.
+const btnForceClose = el('btnForceClose');
+if (btnForceClose) {
+  btnForceClose.addEventListener('click', async () => {
+    // Adel strict: interdit (reset serveur/client masque une désync au lieu de corriger la source)
+    _applyStrictUI();
+    const co = el('coachOutput');
+    if (co) { co.textContent = '🚫 FORCER FERMETURE interdit (Adel strict). Utilisez SORTIR uniquement.'; co.style.borderColor = 'var(--short)'; }
+    btnForceClose.style.display = 'none';
+    return;
+    const ok = confirm('FORCER LA FERMETURE ?\n\nCette action réinitialise la position côté serveur et client.\nUtiliser uniquement si SORTIR ne fonctionne pas.');
+    if (!ok) return;
+    btnForceClose.textContent = '🔴 FERMETURE EN COURS...';
+    btnForceClose.disabled = true;
+    systemLog({ level: 'action', category: 'button', action: 'FORCE_CLOSE', message: 'Force close déclenché', data: { symbol: S.symbol, tf: S.tf } });
+
+    // 1. Tentative normale d'abord
+    try {
+      const r = await api('/coach/trade-action', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ symbol: S.symbol, timeframe: S.tf, action: 'EXIT' })
+      });
+      if (r.ok) { el('coachOutput').textContent = '■ Position fermée (normal).'; }
+    } catch (_) {}
+
+    // 2. Force reset serveur (efface même si serveur n'avait plus la position)
+    try {
+      await api('/coach/trade-state/reset', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ symbol: S.symbol, timeframe: S.tf })
+      });
+    } catch (_) {}
+
+    // 3. Nettoyage client total
+    S.position = null;
+    S.armed = false; S._armedAt = null; S._lockedEntryTf = null;
+    if (typeof stopLiveMonitor === 'function') stopLiveMonitor();
+    if (typeof clearTradeLevels === 'function') clearTradeLevels();
+    if (typeof stopCoachLive === 'function') stopCoachLive();
+    if (typeof stopArmedWatchdog === 'function') stopArmedWatchdog();
+    if (typeof stopArmedVocalLoop === 'function') stopArmedVocalLoop();
+    const bE = el('btnExit'), bBe = el('btnBe'), bPtp = el('btnPartialTp');
+    if (bE)   { bE.disabled = true;   bE.style.opacity = '0.4'; }
+    if (bBe)  { bBe.disabled = true;  bBe.style.opacity = '0.4'; }
+    if (bPtp) { bPtp.disabled = true; bPtp.style.opacity = '0.4'; }
+    const bEntrer = el('btnEntrer');
+    if (bEntrer) { bEntrer.innerHTML = '▶ ENTRER'; bEntrer.disabled = false; bEntrer.className = bEntrer.className.replace(' armed',''); }
+    el('coachOutput').textContent = '■ FERMETURE FORCÉE — Position réinitialisée. Serveur et client synchronisés.';
+    speak('Fermeture forcée. Position réinitialisée.');
+    btnForceClose.textContent = '🔴 FORCER FERMETURE — Urgence';
+    btnForceClose.disabled = false;
+    btnForceClose.style.display = 'none';
+    await refreshAll();
+  });
+}
+
 // ── TIMEFRAME CHANGE ───────────────────────────────────────────────────
 
 el('selTF').addEventListener('change', e => {
-  S.tf = e.target.value;
-  _chartTf = null; // forcer rechargement même si symbole inchangé
-  scheduleWidgetReload(S.symbol, S.tf);
-  // Sync TF avec serveur → broadcast extension via SSE (active-symbol)
-  fetch('/extension/command', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ command: 'set-symbol', payload: { symbol: S.symbol, timeframe: S.tf, mode: S.mode, source: 'dashboard' } })
-  }).catch(() => {});
+  // Adel strict: TF auto-détectée depuis TradingView (interdit de pousser une TF depuis le dashboard)
+  _applyStrictUI();
+  const sel = el('selTF');
+  if (sel) sel.value = S.tf || '';
 });
 
 el('selMode').addEventListener('change', e => {
-  S.mode = e.target.value;
-  if (typeof speak === 'function' && !S.muted) speak('Mode ' + S.mode + ' activé.');
-  // Sync mode avec le serveur → broadcast extension via SSE
-  fetch('/set-mode', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ mode: S.mode, source: 'dashboard' })
-  }).catch(() => {});
+  // Adel strict: mode non forcé depuis le dashboard (source unique = serveur/extension/bridge)
+  _applyStrictUI();
+  const sel = el('selMode');
+  if (sel) sel.value = S.mode || '';
 });
 
 // ── CANDLE COUNTDOWN ───────────────────────────────────────────────────
@@ -4076,7 +4975,8 @@ function startCandleCountdown() {
   const update = () => {
     const now = new Date();
     const tfMin = { M1:1, M5:5, M15:15, M30:30, H1:60, H4:240, D1:1440, W1:10080 };
-    const mins = tfMin[S.tf] || 60;
+    const mins = tfMin[S.tf];
+    if (!mins) { setText('cardClose', '--'); setText('sideClose', '--'); setText('sideTF', '--'); return; }
     const totalSec = mins * 60;
     const elapsed = (now.getMinutes() % mins) * 60 + now.getSeconds();
     const remaining = totalSec - elapsed;
@@ -4091,15 +4991,33 @@ function startCandleCountdown() {
   setInterval(update, 1000);
 }
 
+// ── VISIBILITY THROTTLE — pause polls when tab hidden ──────────────────
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) {
+    if (monitorTimer) { clearInterval(monitorTimer); monitorTimer = null; }
+    if (_coachLiveTimer) { clearInterval(_coachLiveTimer); _coachLiveTimer = null; }
+    if (_zoneWatchTimer) { clearInterval(_zoneWatchTimer); _zoneWatchTimer = null; }
+    if (_zoneVocalTimer) { clearInterval(_zoneVocalTimer); _zoneVocalTimer = null; }
+  } else {
+    // Resume when tab visible again
+    if (typeof startLiveMonitor === 'function' && S && S.entered) startLiveMonitor();
+    if (typeof startCoachLive === 'function' && S && S.armed) startCoachLive();
+  }
+});
+
 // ── BOOT ───────────────────────────────────────────────────────────────
 
 window.addEventListener('load', async () => {
+  // Adel strict: verrou strict tant que bridge live pas prêt
+  _applyStrictUI();
   // Sync initial state from server
   try {
     const ext = await api('/extension/data');
     if (ext.ok && ext.activeSymbol) {
       const a = ext.activeSymbol;
       const cd = ext.currentData || {};
+      S.serverSymbol = a.symbol || cd.symbol || null;
+      S.serverTf = a.timeframe || cd.timeframe || null;
       updateStatusBar(a.symbol, a.timeframe, cd.price || a.price, 'TradingView',
         cd.updatedAt, ext.systemStatus?.fluxStatus === 'LIVE');
       // Sync TF selector
@@ -4110,10 +5028,14 @@ window.addEventListener('load', async () => {
     }
   } catch (_) {}
 
-  // Init TradingView chart (seul graphique officiel) — direct car 1er chargement
+  // Init TradingView chart — utiliser tvSymbol/tvResolution (format widget natif)
   setTimeout(() => {
     _chartSym = null; _chartTf = null; // forcer init initiale
-    scheduleWidgetReload(S.symbol || 'XAUUSD', S.tf || 'H1');
+    const _initTvSym = S.tvSymbol || _toTvWidgetSym(S.symbol);
+    const _initTvRes = S.tvResolution || _toTvWidgetRes(S.tf);
+    if (_initTvSym && _initTvRes) {
+      scheduleWidgetReload(_initTvSym, _initTvRes);
+    }
   }, 1500);
 
   // Start SSE
@@ -4121,9 +5043,12 @@ window.addEventListener('load', async () => {
 
   // ── Coach stream — reçoit multiTfConsensus, coachMessage, setupType toutes les 4s ──
   // Complète bridgeData SSE — fournit rsiCoherent/signalQuality/entryZone/anticipation
-  (function connectCoachStream() {
+  window._connectCoachStream = function _connectCoachStream() {
     if (S._coachStream) { try { S._coachStream.close(); } catch(_) {} }
-    S._coachStream = new EventSource('/coach/stream?symbol=' + (S.symbol || 'XAUUSD'));
+    const st = _strictCtx();
+    if (!st.ok) return;
+    const url = '/coach/stream?symbol=' + encodeURIComponent(S.symbol);
+    S._coachStream = new EventSource(url);
     S._coachStream.onmessage = function(ev) {
       try {
         const d = JSON.parse(ev.data || '{}');
@@ -4149,9 +5074,10 @@ window.addEventListener('load', async () => {
       } catch(_) {}
     };
     S._coachStream.onerror = function() {
-      setTimeout(connectCoachStream, 5000);
+      setTimeout(window._connectCoachStream, 5000);
     };
-  })();
+  }
+  window._connectCoachStream();
 
   // Candle countdown
   startCandleCountdown();
@@ -4163,12 +5089,103 @@ window.addEventListener('load', async () => {
   // ── POLLING OPTIMISÉ ─────────────────────────────────────────────────────
   // SSE couvre les ticks prix instantanément.
   // Ce polling est uniquement un filet de sécurité si SSE silencieux.
-  setInterval(refreshAll, 10000);   // 5s→10s: SSE couvre l'instantané
-  setInterval(refreshStats, 60000); // 30s→60s: stats non urgentes
+  setInterval(refreshAll, 15000);   // 10s→15s: SSE couvre l'instantané
+  setInterval(refreshStats, 90000); // 60s→90s: stats non urgentes
 
   // Disable orchestration auto (manual mode)
   api('/orchestration/disable', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' }).catch(() => {});
 });
+</script>
+
+<!-- ══ LOG GLOBAL PANEL — visible en bas du dashboard ══════════════════════ -->
+<div id="_adelLogPanel" style="position:fixed;bottom:0;left:0;right:0;z-index:9000;background:rgba(2,6,23,0.97);border-top:1px solid #1e40af44;font-family:monospace;font-size:11px;color:#94a3b8;transition:height .2s ease;height:28px;overflow:hidden;">
+  <div id="_adelLogHeader" style="display:flex;align-items:center;gap:8px;padding:4px 12px;cursor:pointer;user-select:none;height:28px;box-sizing:border-box;" onclick="document.getElementById('_adelLogPanel').style.height=document.getElementById('_adelLogPanel').style.height==='28px'?'180px':'28px';document.getElementById('_adelLogToggleArrow').textContent=document.getElementById('_adelLogPanel').style.height==='180px'?'▼':'▲'">
+    <span style="color:#3b82f6;font-weight:700">LOG</span>
+    <span id="_adelSyncBadge" style="padding:1px 7px;border-radius:10px;font-size:10px;font-weight:700;background:rgba(100,116,139,0.3);color:#64748b">SYNC —</span>
+    <span id="_adelBridgeBadge" style="padding:1px 7px;border-radius:10px;font-size:10px;font-weight:700;background:rgba(100,116,139,0.3);color:#64748b">BRIDGE —</span>
+    <span id="_adelLogLast" style="color:#64748b;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">En attente...</span>
+    <span id="_adelLogToggleArrow" style="color:#475569;font-size:10px">▲</span>
+  </div>
+  <div id="_adelLogBody" style="height:152px;overflow-y:auto;padding:0 12px 6px;"></div>
+</div>
+<!-- ══ FIN LOG GLOBAL PANEL ══════════════════════════════════════════════════ -->
+
+<script>
+// ── LOG GLOBAL ADEL — ring buffer 80 lignes, visible dans le panel ───────────
+(function() {
+  const _MAX = 80;
+  const _log = [];
+  const _bodyEl = document.getElementById('_adelLogBody');
+  const _lastEl = document.getElementById('_adelLogLast');
+  const _syncBadge = document.getElementById('_adelSyncBadge');
+  const _bridgeBadge = document.getElementById('_adelBridgeBadge');
+  const _panel = document.getElementById('_adelLogPanel');
+
+  const _COL = { action:'#f97316', error:'#ef4444', warn:'#eab308', info:'#94a3b8', sync:'#22c55e' };
+
+  function _addLog(level, category, msg) {
+    const ts = new Date().toLocaleTimeString('fr-FR');
+    const line = '[' + ts + '] ' + (category ? '[' + category.toUpperCase() + '] ' : '') + msg;
+    _log.push({ ts, level, line });
+    if (_log.length > _MAX) _log.shift();
+    // DOM
+    if (_bodyEl) {
+      const d = document.createElement('div');
+      d.style.color = _COL[level] || '#94a3b8';
+      d.style.padding = '1px 0';
+      d.textContent = line;
+      _bodyEl.appendChild(d);
+      if (_bodyEl.children.length > _MAX) _bodyEl.removeChild(_bodyEl.firstChild);
+      _bodyEl.scrollTop = _bodyEl.scrollHeight;
+    }
+    if (_lastEl) { _lastEl.textContent = line; _lastEl.style.color = _COL[level] || '#94a3b8'; }
+  }
+
+  // Monkey-patch systemLog pour aussi afficher dans le panel
+  const _origSysLog = window.systemLog;
+  window.systemLog = function(entry) {
+    _addLog(entry.level || 'info', entry.category, entry.message || entry.action || '');
+    if (_origSysLog) _origSysLog(entry);
+  };
+
+  // Log les clics boutons directement (sécurité si systemLog non encore patché)
+  document.addEventListener('click', function(e) {
+    const btn = e.target.closest('button[id]');
+    if (!btn) return;
+    _addLog('action', 'BTN', 'CLIC → ' + (btn.textContent || btn.id).trim().substring(0,40));
+  }, true);
+
+  // Sync-check toutes les 8s — met à jour les badges
+  async function _syncCheck() {
+    try {
+      const r = await fetch('/api/sync-check');
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      const d = await r.json();
+      const _sym = d.symbol || '—';
+      const _px  = d.price ? d.price.toFixed(d.symbol&&d.symbol.includes('JPY')?3:2) : '—';
+      const _age = d.ageLabel || '—';
+      const _src = d.source === 'keepalive-cache' ? 'KA' : 'TV';
+      if (_syncBadge) {
+        _syncBadge.textContent = _sym + ' ' + _px + ' [' + _src + ' ' + _age + ']';
+        _syncBadge.style.background = d.connected ? 'rgba(34,197,94,0.2)' : 'rgba(239,68,68,0.2)';
+        _syncBadge.style.color = d.connected ? '#4ade80' : '#ef4444';
+      }
+      if (_bridgeBadge) {
+        _bridgeBadge.textContent = d.bridgeLive ? '⬤ BRIDGE' : '○ BRIDGE OFF';
+        _bridgeBadge.style.background = d.bridgeLive ? 'rgba(34,197,94,0.15)' : 'rgba(239,68,68,0.15)';
+        _bridgeBadge.style.color = d.bridgeLive ? '#22c55e' : '#ef4444';
+      }
+      _addLog('sync', 'SYNC', _sym + ' @ ' + _px + ' | Bridge:' + (d.bridgeLive?'ON':'OFF') + ' | Ext:' + d.extensionClients + ' clients');
+    } catch(e) {
+      if (_bridgeBadge) { _bridgeBadge.textContent = '○ SERVEUR OFF'; _bridgeBadge.style.color='#ef4444'; }
+      _addLog('error', 'SYNC', 'sync-check erreur: ' + e.message);
+    }
+  }
+
+  _addLog('info', 'BOOT', 'Dashboard démarré — Trading Auto Analyzer');
+  _syncCheck();
+  setInterval(_syncCheck, 8000);
+})();
 </script>
 
 </body>

@@ -8,13 +8,12 @@ const ChartModule = {
   _candleSeries: null,
   _currentSymbol: null,
   _currentTF: 'H1',
-  _apiBase: 'http://127.0.0.1:4001',  // TRADING AUTO EXCLUSIVE
+  _apiBase: 'http://127.0.0.1:4000',  // TRADING AUTO EXCLUSIVE
   _entryLine: null,
   _slLine: null,
   _tpLine: null,
   _livePriceLine: null,
   _lastRates: null,       // keep last loaded rates so live-update needs no full reload
-  _lastLevels: null,      // cache last valid entry/sl/tp — never cleared when position active
   
   // ── INIT CHART ──────────────────────────────────────────────────────────
   init: function(containerId) {
@@ -58,7 +57,6 @@ const ChartModule = {
     this._currentSymbol = symbol;
     this._currentTF = tf;
     this._lastRates = null;
-    this._lastLevels = null;   // reset cached levels on symbol/TF change
     
     console.log(`[CHART] Loading ${symbol} ${this._currentTF} from /klines...`);
     
@@ -88,31 +86,11 @@ const ChartModule = {
       const lp = Number(livePrice);
       if (Number.isFinite(lp) && lp > 0 && rates.length > 0) {
         const last = rates[rates.length - 1];
-        const lastClose = Number(last.close);
-
-        // ── PRICE OFFSET CORRECTION ──────────────────────────────────────────
-        // Bridge TV price history may have slight offset vs live price.
-        // If offset < 1.5%, shift candles to align with live TV price.
-        if (lastClose > 0) {
-          const offset = lp - lastClose;
-          const offsetPct = Math.abs(offset / lp);
-          if (offsetPct > 0 && offsetPct < 0.015) {
-            rates.forEach(r => {
-              r.open  = r.open  + offset;
-              r.high  = r.high  + offset;
-              r.low   = r.low   + offset;
-              r.close = r.close + offset;
-            });
-            console.log(`[CHART] Price offset correction: ${offset > 0 ? '+' : ''}${offset.toFixed(3)} (${(offsetPct*100).toFixed(2)}%) bridge TV align`);
-          }
-        }
-
-        // Anchor last candle close to exact live TV price
         last.close = lp;
         if (lp > Number(last.high)) last.high = lp;
-        if (lp < Number(last.low))  last.low  = lp;
+        if (lp < Number(last.low)) last.low = lp;
       }
-
+      
       this.renderChart({ rates: rates, symbol: symbol, klines: rates.length });
       this._lastRates = rates;   // save for fast-path live updates
       this.applyTradeLevels(levels || null, lp);
@@ -147,11 +125,6 @@ const ChartModule = {
       try { this._chart.remove(); } catch (_) {}
       this._chart = null;
       this._candleSeries = null;
-      // Nullifier les refs de lignes — elles appartiennent à l'ancienne série (invalide)
-      this._entryLine = null;
-      this._slLine = null;
-      this._tpLine = null;
-      this._livePriceLine = null;
     }
     
     // Remove old DOM
@@ -189,109 +162,59 @@ const ChartModule = {
 
   applyTradeLevels: function(levels, livePrice) {
     if (!this._candleSeries) return;
+    try {
+      if (this._entryLine) { this._candleSeries.removePriceLine(this._entryLine); this._entryLine = null; }
+      if (this._slLine) { this._candleSeries.removePriceLine(this._slLine); this._slLine = null; }
+      if (this._tpLine) { this._candleSeries.removePriceLine(this._tpLine); this._tpLine = null; }
+      if (this._livePriceLine) { this._candleSeries.removePriceLine(this._livePriceLine); this._livePriceLine = null; }
+    } catch (_) {}
 
-    // ── CACHE AVEC ENTRY VERROUILLÉE ────────────────────────────────────────
-    // L'entry est verrouillée au premier appel (prix d'exécution réel).
-    // SL et TP peuvent évoluer (trailing SL, ajustement TP), entry ne bouge jamais.
-    // _lastLevels est remis à null uniquement lors d'un reload complet (changement sym/TF).
-    if (levels && Number(levels.entry) > 0) {
-      if (!this._lastLevels) {
-        // Premier appel : verrouiller entry + sl + tp + direction
-        // La direction est mémorisée UNE FOIS pour que la détection "sécurisé"
-        // fonctionne même quand le SL franchit l'entry (le SL < entry ne tient plus)
-        const _firstSl  = Number(levels.sl);
-        const _firstEnt = Number(levels.entry);
-        const _dir = levels.direction
-          ? String(levels.direction).toUpperCase()
-          : (_firstSl > 0 && _firstSl < _firstEnt ? 'LONG' : 'SHORT');
-        this._lastLevels = {
-          entry:    _firstEnt,
-          sl:       _firstSl,
-          tp:       Number(levels.tp),
-          isLong:   _dir === 'LONG'  // mémorisé définitivement dès la 1ère lock
-        };
-      } else {
-        // Entry gelée — sl/tp peuvent être mis à jour, direction immuable
-        if (Number(levels.sl) > 0) this._lastLevels.sl = Number(levels.sl);
-        if (Number(levels.tp) > 0) this._lastLevels.tp = Number(levels.tp);
-      }
+    const entry = Number(levels && levels.entry);
+    const sl = Number(levels && levels.sl);
+    const tp = Number(levels && levels.tp);
+
+    if (Number.isFinite(entry) && entry > 0) {
+      this._entryLine = this._candleSeries.createPriceLine({
+        price: entry,
+        color: '#60a5fa',
+        lineWidth: 1,
+        lineStyle: 2,
+        axisLabelVisible: true,
+        title: 'ENTRY'
+      });
+    }
+    if (Number.isFinite(sl) && sl > 0) {
+      this._slLine = this._candleSeries.createPriceLine({
+        price: sl,
+        color: '#ef4444',
+        lineWidth: 1,
+        lineStyle: 2,
+        axisLabelVisible: true,
+        title: 'SL'
+      });
+    }
+    if (Number.isFinite(tp) && tp > 0) {
+      this._tpLine = this._candleSeries.createPriceLine({
+        price: tp,
+        color: '#22c55e',
+        lineWidth: 1,
+        lineStyle: 2,
+        axisLabelVisible: true,
+        title: 'TP'
+      });
     }
 
-    const eL    = this._lastLevels;
-    const entry = eL ? Number(eL.entry) : NaN;
-    const sl    = eL ? Number(eL.sl)    : NaN;
-    const tp    = eL ? Number(eL.tp)    : NaN;
-    const lp    = Number(livePrice);
-
-    // ── LIGNES ENTRY / SL / TP : créer une fois, mettre à jour via applyOptions ──
-    // → Zéro suppression/recréation parasite → ligne ENTRY immobile entre les ticks SSE
-    try {
-      // ── DÉTECTION GAINS SÉCURISÉS ─────────────────────────────────────────
-      // LONG: SL ≥ entry → ligne ENTRY passe en vert (gains garantis)
-      // SHORT: SL ≤ entry → idem
-      // _isLong est verrouillé à la création de la position (ne change pas quand SL dépasse entry)
-      const _isLongPos = eL && eL.isLong !== undefined
-        ? eL.isLong
-        : (sl > 0 && entry > 0 && sl < entry);
-      const _secured = entry > 0 && sl > 0
-        && (_isLongPos ? sl >= entry : sl <= entry);
-      const _entryColor = _secured ? '#22c55e' : '#f97316';  // vert si sécurisé, orange sinon
-      const _entryTitle = _secured ? 'ENTRY ✅' : 'ENTRY';
-
-      // ENTRY — ligne fixe, jamais supprimée tant que position active
-      if (Number.isFinite(entry) && entry > 0) {
-        if (!this._entryLine) {
-          this._entryLine = this._candleSeries.createPriceLine({
-            price: entry, color: _entryColor, lineWidth: 3, lineStyle: 0,
-            axisLabelVisible: true, title: _entryTitle
-          });
-        } else {
-          this._entryLine.applyOptions({ price: entry, color: _entryColor, title: _entryTitle });
-        }
-      } else if (this._entryLine) {
-        this._candleSeries.removePriceLine(this._entryLine); this._entryLine = null;
-      }
-
-      // SL — rouge fixe, mis à jour via applyOptions
-      if (Number.isFinite(sl) && sl > 0) {
-        if (!this._slLine) {
-          this._slLine = this._candleSeries.createPriceLine({
-            price: sl, color: '#ef4444', lineWidth: 2, lineStyle: 2,
-            axisLabelVisible: true, title: 'SL'
-          });
-        } else {
-          this._slLine.applyOptions({ price: sl });
-        }
-      } else if (this._slLine) {
-        this._candleSeries.removePriceLine(this._slLine); this._slLine = null;
-      }
-
-      // TP
-      if (Number.isFinite(tp) && tp > 0) {
-        if (!this._tpLine) {
-          this._tpLine = this._candleSeries.createPriceLine({
-            price: tp, color: '#22c55e', lineWidth: 2, lineStyle: 2,
-            axisLabelVisible: true, title: 'TP'
-          });
-        } else {
-          this._tpLine.applyOptions({ price: tp });
-        }
-      } else if (this._tpLine) {
-        this._candleSeries.removePriceLine(this._tpLine); this._tpLine = null;
-      }
-
-      // LIVE — prix change à chaque tick : supprimer/recréer uniquement celui-ci
-      if (this._livePriceLine) {
-        this._candleSeries.removePriceLine(this._livePriceLine);
-        this._livePriceLine = null;
-      }
-      if (Number.isFinite(lp) && lp > 0) {
-        this._livePriceLine = this._candleSeries.createPriceLine({
-          price: lp, color: '#f59e0b', lineWidth: 1, lineStyle: 0,
-          axisLabelVisible: true, title: 'LIVE'
-        });
-      }
-    } catch (_) {}
+    const lp = Number(livePrice);
+    if (Number.isFinite(lp) && lp > 0) {
+      this._livePriceLine = this._candleSeries.createPriceLine({
+        price: lp,
+        color: '#f59e0b',
+        lineWidth: 1,
+        lineStyle: 0,
+        axisLabelVisible: true,
+        title: 'LIVE'
+      });
+    }
   },
   
   // ── CANVAS FALLBACK RENDERER ──────────────────────────────────────────
@@ -364,11 +287,17 @@ const ChartModule = {
     }
   },
   
-  // ── RESET LEVELS (autorité serveur) ────────────────────────────────
-  // Appelé par position-sync quand le serveur envoie une entry différente du cache local.
-  // Efface _lastLevels pour que le prochain applyTradeLevels reprenne le prix serveur.
-  resetLevels: function() {
-    this._lastLevels = null;
+  // ── NO DATA HANDLER ───────────────────────────────────────────────
+  showNoData: function(containerId) {
+    const container = document.getElementById(containerId || 'chart-container');
+    if (container) {
+      container.innerHTML = '<div style="color:#f87171;font-weight:bold;padding:20px;">NO DATA</div>';
+    }
+    this._lastRates = null;
+    this._currentSymbol = null;
+    this._currentTF = null;
+    this._candleSeries = null;
+    this._chart = null;
   },
 
   // ── GET CURRENT STATE ──────────────────────────────────────────────

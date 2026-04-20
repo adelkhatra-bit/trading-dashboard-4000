@@ -6,7 +6,7 @@
 (function () {
   'use strict';
 
-  const ROOT   = 'C:\\Users\\97156\\OneDrive\\Desktop\\trading-auto';
+  const ROOT   = 'C:\\Users\\97156\\OneDrive\\Desktop\\trading-boulot';
   const SERVER = 'http://localhost:4000';
 
   // ══════════════════════════════════════════════════════════════
@@ -31,10 +31,10 @@
         tech: 'LightweightCharts 4.1.3, fetch :4000, AbortSignal.timeout(4000), circuit-breaker _serverOnline'
       },
       '/dashboard': {
-        file: 'dashboard.html', role: 'Dashboard Bridge — visualisation données MT5',
+        file: 'dashboard.html', role: 'Dashboard Bridge — visualisation données Bridge TV',
         safe: 'Modifier cartes info, ajouter sections données',
         danger: 'Ne pas changer URL bridge ni logique refresh 5s',
-        deps: 'server.js /health /mt5/latest', tech: 'fetch :4000, setInterval 5s'
+        deps: 'server.js /health /tradingview/live', tech: 'fetch :4000, setInterval 5s'
       },
       '/popup': {
         file: 'popup.html', role: 'Popup extension version web (test)',
@@ -75,11 +75,11 @@
           name: 'server.js',
           path: 'server.js',
           cat: 'Backend',
-          role: 'Serveur Express principal — 60+ routes, SSE, orchestration, MT5 bridge proxy',
+          role: 'Serveur Express principal — 60+ routes, SSE, orchestration, bridge TV',
           deps_in: 'market-store.js, symbol-matcher.js, orchestrator.js',
           deps_out: 'Appelé par: tous les fichiers HTML et extension',
-          functions: 'sendHTMLWithHelper(), checkMT5Bridge(), classifySetup(), validateTrade(), calcTradeLevels()',
-          routes: 'GET / /studio /dashboard /popup /agent-log /agents-monitor | GET /health /state /stream | GET/POST /mt5/* | GET /quote /klines /instant-trade-live /match-symbol/:sym | POST /trade /zones | GET /agent-bus /system-log /tasks',
+          functions: 'sendHTMLWithHelper(), checkBridgeTVStatus(), classifySetup(), validateTrade(), calcTradeLevels()',
+          routes: 'GET / /studio /dashboard /popup /agent-log /agents-monitor | GET /health /state /stream | GET/POST /tradingview/* | GET /quote /klines /instant-trade-live /match-symbol/:sym | POST /trade /zones | GET /agent-bus /system-log /tasks',
           critical: true,
           status: 'OK',
           fix: 'Redémarrer après modification: node server.js — Ne pas modifier routes existantes — Ajouter après ligne 1895'
@@ -92,7 +92,7 @@
           role: 'Singleton données marché — source de vérité unique pour prix, SSE broadcast',
           deps_in: 'Aucun',
           deps_out: 'Utilisé par: server.js, tous les agents src/agents/',
-          functions: 'updateFromMT5(), updateAnalysis(), addSSEClient(), broadcast(), getState(), getLatestForSymbol()',
+          functions: 'updateFromTV(), updateAnalysis(), addSSEClient(), broadcast(), getState(), getLatestForSymbol()',
           critical: true,
           status: 'OK',
           fix: 'CRITIQUE — Modifier casse le SSE stream /stream — Tester /state après modification'
@@ -102,7 +102,7 @@
           name: 'symbol-matcher.js',
           path: 'lib/symbol-matcher.js',
           cat: 'Backend',
-          role: 'Moteur matching symboles — 50+ variantes TV↔MT5, validation prix ±0.5%',
+          role: 'Moteur matching symboles — 50+ variantes TV↔Bridge TV, validation prix ±0.5%',
           deps_in: 'Aucun',
           deps_out: 'server.js /match-symbol route, tradingview-analyzer/mapping-module.js',
           functions: 'findCanonicalSymbol(), matchSymbolWithPriceValidation(), getDisplayStatus()',
@@ -131,7 +131,7 @@
           role: 'Coordinateur maître — dispatche vers 8+ agents, calcule finalScore, décision trade',
           deps_in: 'server.js POST /orchestration/run-now',
           deps_out: 'trading-core.js, timeframe-consensus.js, riskManager.js, macroAgent.js, newsAgent.js',
-          functions: 'run(mt5Payload) → {direction, score, entry, sl, tp}',
+          functions: 'run(tvPayload) → {direction, score, entry, sl, tp}',
           critical: true,
           status: 'OK',
           fix: 'Tester POST /orchestration/run-now après modification'
@@ -213,10 +213,10 @@
           name: 'dashboard.html',
           path: 'dashboard.html',
           cat: 'HTML',
-          role: 'Dashboard Bridge — viewer données MT5',
+          role: 'Dashboard Bridge — viewer données Bridge TV',
           url: '/dashboard',
           deps_in: 'server.js GET /dashboard',
-          deps_out: '/health /mt5/latest',
+          deps_out: '/health /tradingview/live',
           ids: 'bridge-status, active-symbol, current-price, market-session',
           critical: false,
           status: 'OK',
@@ -288,8 +288,8 @@
           cat: 'Extension',
           role: 'Logique UI extension Chrome (1936L) — FICHIER PRINCIPAL de l\'extension',
           deps_in: 'tradingview-analyzer/popup.html (script tag)',
-          deps_out: '13 modules: chart-module, mapping-module, symbol-mapper, symbol-manager, market-session, economic-calendar, news-engine, error-handler, ai-debugger, mt5-symbols',
-          functions: 'setupPopup(), tab handlers, btn-analyze, btn-refresh, btn-search-mt5, loadInstantTrade(), renderChart()',
+          deps_out: '13 modules: chart-module, mapping-module, symbol-mapper, symbol-manager, market-session, economic-calendar, news-engine, error-handler, ai-debugger, tv-symbols',
+          functions: 'setupPopup(), tab handlers, btn-analyze, btn-refresh, btn-search-tv, loadInstantTrade(), renderChart()',
           critical: true,
           status: 'OK',
           fix: 'Modifier avec précaution — 1936 lignes — recharger extension Chrome après — tester sur TradingView.com'
@@ -376,7 +376,7 @@
 
       // === AGENTS ===
       agents: [
-        { id: 'ag-trading-core', name: 'trading-core.js', path: 'src/agents/trading-core.js', cat: 'Agent', role: 'Analyse technique: RSI, EMA, FVG, BOS, liquidité', functions: 'analyze(mt5Data, profile)', status: 'OK' },
+        { id: 'ag-trading-core', name: 'trading-core.js', path: 'src/agents/trading-core.js', cat: 'Agent', role: 'Analyse technique: RSI, EMA, FVG, BOS, liquidité', functions: 'analyze(tvData, profile)', status: 'OK' },
         { id: 'ag-tf-consensus', name: 'timeframe-consensus.js', path: 'src/agents/timeframe-consensus.js', cat: 'Agent', role: 'Consensus multi-TF hiérarchique D1→M1', functions: 'buildConsensus(multiTFPayload)', status: 'OK' },
         { id: 'ag-technical', name: 'technicalAgent.js', path: 'src/agents/technicalAgent.js', cat: 'Agent', role: 'EMA/RSI/ATR calculs multi-paires (278L)', functions: 'analyzeTechnical(), calcEMA(), calcRSI(), calcATR()', status: 'OK' },
         { id: 'ag-trade-logic', name: 'trade-logic.js', path: 'src/agents/trade-logic.js', cat: 'Agent', role: 'Explique POURQUOI entrer/attendre/éviter', functions: 'explain({direction, score, context})', status: 'OK' },
@@ -395,62 +395,6 @@
         { id: 'ag-coord', name: 'coordinator.js', path: 'src/agents/coordinator.js', cat: 'Agent', role: 'Cycle agents avec prix réel bridge TV uniquement', functions: 'runAgentCycle(priceMap, balance, riskPct)', status: 'OK' },
         { id: 'ag-state', name: 'stateManager.js', path: 'src/agents/stateManager.js', cat: 'Agent', role: 'Persistance état localStorage/fichier', functions: 'save(), get(), getAll(), reset(), export_state()', status: 'OK' },
         { id: 'ag-loop', name: 'continuous-loop.js', path: 'src/agents/continuous-loop.js', cat: 'Agent', role: 'Boucle continue DÉSACTIVÉE — déclencher via POST /orchestration/run-now', functions: 'startContinuousLoop(), stopContinuousLoop(), runImmediately()', status: 'OK' }
-      ],
-
-      // === MT5 BRIDGE ===
-      bridge: [
-        {
-          id: 'mt5-bridge-py',
-          name: 'mt5_bridge.py',
-          path: 'mt5_bridge.py',
-          cat: 'Bridge MT5',
-          role: 'Bridge Python legacy (désactivé en mode 4000 unique)',
-          deps_in: 'MetaTrader 5 terminal installé + EA actif',
-          deps_out: 'Aucun en mode single-environment',
-          functions: 'ensure_connected(), /health /data /symbol /price /klines /positions',
-          critical: true,
-          status: 'OFFLINE',
-          fix: 'Bridge legacy désactivé: utiliser uniquement le serveur principal sur :4000'
-        },
-        {
-          id: 'mt5-bridge-simple',
-          name: 'mt5_bridge_simple.py',
-          path: 'mt5_bridge_simple.py',
-          cat: 'Bridge MT5',
-          role: 'Bridge Python simplifié — version légère sans toutes les routes',
-          deps_in: 'MetaTrader 5',
-          deps_out: 'server.js',
-          functions: 'Routes essentielles seulement',
-          critical: false,
-          status: 'OFFLINE',
-          fix: 'Alternative légère à mt5_bridge.py — même commande de lancement'
-        },
-        {
-          id: 'mt5-ea',
-          name: 'Bridge_MT5_Studio.mq5',
-          path: 'Bridge_MT5_Studio.mq5',
-          cat: 'Bridge MT5',
-          role: 'Expert Advisor MT5 — envoie données vers bridge Python via HTTP',
-          deps_in: 'MetaTrader 5 terminal',
-          deps_out: 'mt5_bridge.py (POST données)',
-          functions: 'OnTick(), OnTimer() — envoie prix/OHLC/positions au bridge',
-          critical: true,
-          status: 'À installer',
-          fix: 'Copier dans: MQL5/Experts/ → Compiler → Attacher sur chart XAUUSD'
-        },
-        {
-          id: 'mt5-reqs',
-          name: 'requirements-mt5.txt',
-          path: 'requirements-mt5.txt',
-          cat: 'Bridge MT5',
-          role: 'Dépendances Python pour bridge MT5',
-          deps_in: 'pip',
-          deps_out: 'mt5_bridge.py',
-          functions: 'MetaTrader5, Flask, requests, pandas',
-          critical: false,
-          status: 'OK',
-          fix: 'Installer: pip install -r requirements-mt5.txt'
-        }
       ],
 
       // === DATA JSON ===
@@ -525,9 +469,9 @@
 
     // ── ROUTES IMPORTANTES ────────────────────────────────────
     routes: [
-      { path: '/health',                   method: 'GET',  desc: 'Santé serveur — ok, uptime, mt5Status, dataSource' },
+      { path: '/health',                   method: 'GET',  desc: 'Santé serveur — ok, uptime, tvBridgeStatus, dataSource' },
       { path: '/studio',                   method: 'GET',  desc: 'Page studio trading' },
-      { path: '/dashboard',                method: 'GET',  desc: 'Dashboard Bridge MT5' },
+      { path: '/dashboard',                method: 'GET',  desc: 'Dashboard Bridge TV' },
       { path: '/agent-log',                method: 'GET',  desc: 'Hub central — toutes les tâches' },
       { path: '/stream',                   method: 'GET',  desc: 'SSE stream — prix live, analyses en temps réel' },
       { path: '/state',                    method: 'GET',  desc: 'État complet système — market-store + agents' },
@@ -540,9 +484,9 @@
       { path: '/active-symbol',            method: 'GET',  desc: 'Symbole actif depuis extension Chrome' },
       { path: '/active-symbol',            method: 'POST', desc: 'Mettre à jour symbole actif' },
       { path: '/orchestration/run-now',    method: 'POST', desc: 'Déclencher cycle orchestration' },
-      { path: '/mt5/latest',               method: 'GET',  desc: 'Dernière donnée MT5 reçue' },
+      { path: '/tradingview/live',             method: 'GET',  desc: 'Dernière donnée Bridge TV' },
       { path: '/mapping/list',             method: 'GET',  desc: 'Mappings symboles sauvegardés' },
-      { path: '/positions',                method: 'GET',  desc: 'Positions ouvertes MT5' },
+      { path: '/positions',                method: 'GET',  desc: 'Positions ouvertes' },
       { path: '/news',                     method: 'GET',  desc: 'Feed news récent' },
       { path: '/calendar',                 method: 'GET',  desc: 'Calendrier économique' },
       { path: '/analyze?symbol=XAUUSD',    method: 'GET',  desc: 'Analyse technique complète' },
@@ -561,9 +505,9 @@
       '# 🔧 DEMANDE DE RÉPARATION — Trading Auto',
       '',
       '## Projet',
-      '**Trading Auto** — Plateforme Copy Trading MT5',
+      '**Trading Auto** — Plateforme Bridge TV',
       '**Serveur**: http://localhost:4000',
-      '**Stack**: Node.js Express + LightweightCharts + Chrome Extension MV3 + Python MT5 Bridge',
+      '**Stack**: Node.js Express + LightweightCharts + Chrome Extension MV3 + Bridge TV',
       '',
       '## Fichier concerné',
       '- **Nom**: `' + f.name + '`',
@@ -587,7 +531,7 @@
       '- 🔧 Conseil: ' + (f.fix || 'voir le code'),
       '',
       '## Règles absolues du projet',
-      '- ❌ Jamais Math.random() pour les prix — données réelles MT5 uniquement',
+      '- ❌ Jamais Math.random() pour les prix — données réelles Bridge TV uniquement',
       '- ❌ Ne pas changer les routes API existantes dans server.js',
       '- ✅ Toutes les requêtes fetch → AbortSignal.timeout(4000)',
       '- ✅ Redémarrer node server.js après modification de server.js',
@@ -725,7 +669,7 @@
         ${renderFileList(SYSTEM.files.extension, true)}
         <div class="dh-section">🤖 Agents (23)</div>
         ${renderFileList(SYSTEM.files.agents, false)}
-        <div class="dh-section">🔌 Bridge MT5</div>
+        <div class="dh-section">📡 Bridge TV</div>
         ${renderFileList(SYSTEM.files.bridge, true)}
         <div class="dh-section">💾 Données JSON</div>
         ${renderFileList(SYSTEM.files.data, false)}
@@ -854,7 +798,7 @@
       '# CONTEXTE COMPLET — Trading Auto System',
       '## Serveur: http://localhost:4000',
       '## Stack: Node.js Express + LightweightCharts + Chrome Extension MV3 (single environment :4000)',
-      '## Règles: ❌ No Math.random() for prices ✅ AbortSignal.timeout() on all fetch ✅ Real MT5 data only',
+      '## Règles: ❌ No Math.random() for prices ✅ AbortSignal.timeout() on all fetch ✅ Real Bridge TV data only',
       '',
       '## Fichiers critiques:',
       '- server.js → ' + ROOT + '\\server.js (60+ routes, PORT 4000)',

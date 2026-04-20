@@ -2,6 +2,22 @@
 // Centralise toute logique: parle au backend, cache l'état, distribue aux content/popup
 'use strict';
 
+// ══════════════════════════════════════════════════════════════════════════════
+// ✅  PROJET ADEL — Extension unique active — Trading Auto Analyzer
+// Serveur : http://127.0.0.1:4000
+// ══════════════════════════════════════════════════════════════════════════════
+
+// ── SIGNATURE ADEL ────────────────────────────────────────────────────────────
+// Identifiant unique injecté dans TOUTES les requêtes vers le serveur.
+// Le serveur REFUSE toute requête /tradingview/live sans cette signature.
+const ADEL_SIG = 'TRADING-AUTO-ANALYZER';
+const ADEL_EXT_ID = 'bbdmldjileifgbmhgeodfjjodajogjip';
+self.ADEL_ACTIVE = true;
+function adelHeaders() {
+  return { 'Content-Type': 'application/json', 'X-Adel-Source': ADEL_SIG };
+}
+console.log('[ADEL] Service worker actif — Trading Auto Analyzer', ADEL_EXT_ID);
+
 // ── DÉDUPLICATION PRIX + TIMEFRAME ───────────────────────────────────────────
 // Évite de poster des prix identiques chaque seconde au serveur.
 // MAIS : si le timeframe change, on force un envoi immédiat même si le prix est identique.
@@ -23,7 +39,7 @@ function shouldPostLive(symbol, price, timeframe) {
   return false;
 }
 
-const API = 'http://127.0.0.1:4001';  // boulot port
+const API = 'http://127.0.0.1:4000';  // TRADING AUTO EXCLUSIVE
 const POLL_INTERVAL = 1500;  // Poll resserré pour limiter le drift backend/extension
 const SCRAPE_INTERVAL = 1000; // Scrape TradingView DOM en quasi temps-réel
 const FOREGROUND_ENFORCE_MS = 1200;
@@ -36,7 +52,7 @@ let foregroundTimer = null;
 
 let systemState = {
   backendReady: false,
-  mt5Connected: false,
+  tvConnected: false,
   lastSnapshot: null,
   lastUpdate: null,
   activeSymbol: null,
@@ -44,10 +60,12 @@ let systemState = {
   activePrice: null,
   activeTradingViewTabId: null,
   selectedTimeframes: ['M1', 'M5', 'M15', 'M30', 'H1', 'H4', 'D1', 'W1'],
+  isArmed: false,
 };
 
 const PERSISTENT_POPUP_URL = chrome.runtime.getURL('popup.html?persistent=1');
 let persistentPopupWindowId = null;
+let _onClickedBusy = false; // Mutex: empêche double-clic / exécutions parallèles
 
 async function hydratePersistentState() {
   try {
@@ -56,7 +74,7 @@ async function hydratePersistentState() {
     if (saved && typeof saved === 'object') {
       systemState = Object.assign({}, systemState, saved, {
         backendReady: false,
-        mt5Connected: false
+        tvConnected: false
       });
     }
   } catch (_) {}
@@ -218,20 +236,21 @@ async function scrapAndSendTradingView() {
     if (systemState.activePrice && systemState.activePrice > 0) {
       await fetch(API + '/extension/command', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: adelHeaders(),
         body: JSON.stringify({
           command: 'set-symbol',
+          _adel: ADEL_SIG,
           payload: {
             symbol: panelData.symbol,
             timeframe: panelData.timeframe || systemState.activeTimeframe,
             price: systemState.activePrice,
             mode: systemState.activeMode || undefined,
-            source: 'tradingview-extension'  // tag so server/popup can recognise TV origin
+            source: 'tradingview-extension'
           }
         }),
         signal: AbortSignal.timeout(3000)
       }).catch((err) => {
-        console.log('[TV PUSH][ERROR] Context sync error:', err.message);
+        console.log('[ADEL] /extension/command ERROR:', err.message);
       });
     } else {
       console.log('[BG] Skipping /extension/command: no valid price yet');
@@ -260,38 +279,114 @@ async function scrapAndSendTradingView() {
       const _v = _pNum(_pt.macd, null, null);
       if (_v != null) _parsedIndicators.macd = _v;
     }
+    // Mapper le RSI visible vers le champ per-TF correspondant
+    // Permet au serveur de remplir robotV12.rsi_Xm sans attendre le SCAN_TF complet
+    const _curTf = String(panelData.timeframe || systemState.activeTimeframe || 'H1').toUpperCase();
+    const _rsiTfKeyMap = { M1:'rsi_1m', M5:'rsi_5m', M15:'rsi_15m', M30:'rsi_30m', H1:'rsi_60m', H4:'rsi_4h', D1:'rsi_60m' };
+    const _rsiTfKey = _rsiTfKeyMap[_curTf] || null;
     const livePayload = {
-      symbol: panelData.symbol,
-      timeframe: panelData.timeframe || systemState.activeTimeframe,
-      price: systemState.activePrice,
-      timestamp: new Date().toISOString(),
-      source: 'tradingview-extension',
-      indicators: Object.keys(_parsedIndicators).length ? _parsedIndicators : undefined
+      symbol:     panelData.symbol,
+      timeframe:  panelData.timeframe || systemState.activeTimeframe,
+      price:      systemState.activePrice,
+      timestamp:  new Date().toISOString(),
+      source:     'tradingview-extension',
+      _adel:      ADEL_SIG,
+      tickerid:   panelData.tickerid   || null,
+      indicators: panelData.indicators || (Object.keys(_parsedIndicators).length ? _parsedIndicators : {}),
+      legend:     panelData.legend     || {},
+      ask:        panelData.ask        || null,
+      bid:        panelData.bid        || null
     };
+    // Injecter RSI visible dans le champ per-TF pour que robotV12 soit à jour sans SCAN_TF
+    if (_rsiTfKey && _rsi != null) livePayload[_rsiTfKey] = _rsi;
     const tvResp = await fetch(API + '/tradingview/live', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: adelHeaders(),
       body: JSON.stringify(livePayload),
       signal: AbortSignal.timeout(3000)
     });
     if (tvResp.ok) {
-      console.log('[TV PUSH OK] /tradingview/live:', livePayload.symbol, livePayload.timeframe, livePayload.price);
+      console.log('[ADEL] /tradingview/live OK:', livePayload.symbol, livePayload.timeframe, livePayload.price);
     } else {
-      console.warn('[TV PUSH ERROR] /tradingview/live:', livePayload.symbol);
+      console.warn('[ADEL] /tradingview/live ERROR:', livePayload.symbol);
     }
   } catch (err) {
     console.log('[TV PUSH][ERROR] Scrap/send error:', err.message);
   }
 }
+// ── SCAN MULTI-TF — rotation SWITCH_TF pour collecter RSI par UT ─────────
+// Parcourt M1→M5→M15→H1 en cliquant les boutons TF sur TradingView.
+// Collecte un RSI réel par UT puis poste un seul payload consolidé au serveur.
+// Durée ~6s. Restore le TF original après scan.
+let _scanTfRunning = false;
+async function scanAllTimeframes() {
+  if (_scanTfRunning) return;
+  _scanTfRunning = true;
+  const tab = await findTradingViewTab().catch(() => null);
+  if (!tab || typeof tab.id !== 'number') { _scanTfRunning = false; return; }
+
+  const originalTF = systemState.activeTimeframe || 'M1';
+  const SCAN_TFS = ['M1', 'M5', 'M15', 'H1', 'H4'];
+  const rsiByTf = {};
+
+  for (const tf of SCAN_TFS) {
+    try {
+      // Switch TF on TradingView
+      await chrome.tabs.sendMessage(tab.id, { type: 'SWITCH_TF', tf });
+      // Wait for chart to reload indicators
+      await new Promise(r => setTimeout(r, 1400));
+      // Scrape RSI for this TF
+      const resp = await chrome.tabs.sendMessage(tab.id, { type: 'SCRAP_PANEL' });
+      if (resp && resp.ok && resp.data) {
+        const rsi = resp.data.indicators?.rsi ?? resp.data.panelText?.rsi ?? null;
+        if (rsi != null) rsiByTf[tf] = Number(rsi);
+      }
+    } catch (_) {}
+  }
+
+  // Restore TF: toujours M1 quand armé (watchdog doit voir M1), sinon TF original
+  const restoreTF = systemState.isArmed ? 'M1' : originalTF;
+  try {
+    await chrome.tabs.sendMessage(tab.id, { type: 'SWITCH_TF', tf: restoreTF });
+  } catch (_) {}
+
+  // Post dès qu'au moins 1 TF a du RSI — ou même sans RSI pour garder le bridge vivant
+  const populated = Object.keys(rsiByTf).length;
+  const sym = systemState.activeSymbol;
+  const price = systemState.activePrice;
+  if (sym && price) {
+    await fetch(API + '/tradingview/live', {
+      method: 'POST',
+      headers: adelHeaders(),
+      body: JSON.stringify({
+        symbol:   sym,
+        timeframe: originalTF,
+        price,
+        source:   'switch-tf-scan',
+        _adel:    ADEL_SIG,
+        rsi_1m:   rsiByTf.M1  ?? null,
+        rsi_5m:   rsiByTf.M5  ?? null,
+        rsi_15m:  rsiByTf.M15 ?? null,
+        rsi_60m:  rsiByTf.H1  ?? null,
+        rsi_4h:   rsiByTf.H4  ?? null,
+        timestamp: new Date().toISOString()
+      }),
+      signal: AbortSignal.timeout(4000)
+    }).catch(() => {});
+    console.log('[ADEL] SCAN_TF envoyé (' + populated + ' TFs):', JSON.stringify(rsiByTf), '→ /tradingview/live');
+  }
+  _scanTfRunning = false;
+}
+
 // ── POLL BACKEND STATE ────────────────────────────────────────────────────
 async function pollBackendState() {
   // Protection 1 : skip si une requête est déjà en cours
   if (isFetching) return;
 
-  // Protection 2 : skip si aucun onglet actif (utilisateur absent)
+  // Protection 2 : skip si aucun onglet du tout (Chrome fermé / profil non chargé)
   try {
-    const activeTabs = await chrome.tabs.query({ active: true, currentWindow: true });
-    if (activeTabs.length === 0) return;
+    const allTabs = await chrome.tabs.query({});
+    if (allTabs.length === 0) return;
   } catch (_) {}
 
   isFetching = true;
@@ -300,12 +395,20 @@ async function pollBackendState() {
     const healthResp = await fetch(API + '/live/state', {
       signal: AbortSignal.timeout(2000)
     });
-    
+
+    // 503 = bridge gate bloqué (bridge offline) ≠ serveur mort — traiter séparément
+    if (healthResp.status === 503) {
+      systemState.backendReady = true;  // serveur répond, bridge juste offline
+      systemState.tvConnected = false;
+      broadcastStateChange({ type: 'STATE_UPDATE', state: systemState });
+      isFetching = false;
+      return;
+    }
     if (!healthResp.ok) throw new Error('Backend unreachable');
-    
+
     const health = await healthResp.json();
     systemState.backendReady = health.ok;
-    systemState.mt5Connected = health?.bridge?.mt5Enabled === true;
+    systemState.tvConnected = !!(health?.bridge?.tvConnected ?? health?.ok);
 
     const extResp = await fetch(API + '/extension/data', {
       signal: AbortSignal.timeout(2000)
@@ -329,11 +432,26 @@ async function pollBackendState() {
       type: 'STATE_UPDATE',
       state: systemState
     });
-    
+
+    // ── CHECK SCAN FLAG — serveur popup ANALYSER → rotation TF TradingView ──
+    try {
+      const sym = systemState.activeSymbol || '';
+      const flagResp = await fetch(API + '/extension/scan-flag' + (sym ? '?symbol=' + sym : ''), {
+        signal: AbortSignal.timeout(1500)
+      });
+      if (flagResp.ok) {
+        const flagData = await flagResp.json();
+        if (flagData.scan) {
+          console.log('[ADEL] Scan flag détecté — lancement rotation TF:', flagData.symbol);
+          scanAllTimeframes().catch(() => {});
+        }
+      }
+    } catch (_) {}
+
   } catch (err) {
     console.log('[BG] Poll error:', err.message);
     systemState.backendReady = false;
-    systemState.mt5Connected = false;
+    systemState.tvConnected = false;
   } finally {
     isFetching = false;  // Libère le verrou dans tous les cas
   }
@@ -366,11 +484,12 @@ chrome.runtime.onMessage.addListener(function(msg, sender, sendResponse) {
         if (payload.timeframe) systemState.activeTimeframe = String(payload.timeframe).toUpperCase();
         if (Number.isFinite(px) && px > 0) systemState.activePrice = px;
         if (payload.symbol && Number.isFinite(px) && px > 0 && shouldPostLive(payload.symbol, px, payload.timeframe)) {
-          fetch('http://127.0.0.1:4001/tradingview/live', {
+          const signedPayload = Object.assign({}, payload, { _adel: ADEL_SIG });
+          fetch('http://127.0.0.1:4000/tradingview/live', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(payload)
-          }).catch(e => { console.log('[BG→SERVER][ERROR]', e.message); });
+            headers: adelHeaders(),
+            body: JSON.stringify(signedPayload)
+          }).catch(e => { console.log('[ADEL] TV_POST_LIVE ERROR:', e.message); });
         }
         sendResponse({ ok: true });
         return;
@@ -412,9 +531,10 @@ chrome.runtime.onMessage.addListener(function(msg, sender, sendResponse) {
         try {
           const resp = await fetch(API + '/extension/command', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: adelHeaders(),
             body: JSON.stringify({
               command: 'set-symbol',
+              _adel: ADEL_SIG,
               payload: {
                 symbol: sym,
                 timeframe: systemState.activeTimeframe || 'H1',
@@ -513,29 +633,29 @@ chrome.runtime.onMessage.addListener(function(msg, sender, sendResponse) {
       // ─── SAVE MAPPING ────────────────────────────────────────────
       if (msg.type === 'SAVE_MAPPING') {
         const userInput = msg.userInput?.toUpperCase();
-        const mt5Symbol = msg.mt5Symbol?.toUpperCase();
-        
-        if (!userInput || !mt5Symbol) {
+        const tvSymbol = (msg.tvSymbol || '').toUpperCase();
+
+        if (!userInput || !tvSymbol) {
           sendResponse({ ok: false, error: 'Input and symbol required' });
           return;
         }
-        
+
         // Save to chrome.storage.local
         try {
           const mapObj = {};
           mapObj['mapping_' + userInput] = {
             userInput: userInput,
-            mt5Symbol: mt5Symbol,
+            tvSymbol: tvSymbol,
             price: msg.price || null,
             savedAt: new Date().toISOString()
           };
-          
+
           await chrome.storage.local.set(mapObj);
-          console.log('[BG] Mapping saved locally:', userInput, '→', mt5Symbol);
+          console.log('[BG] Mapping saved locally:', userInput, '→', tvSymbol);
         } catch (storageErr) {
           console.log('[BG] Storage error:', storageErr.message);
         }
-        
+
         // Also try to sync with server (for backup HTML)
         try {
           const resp = await fetch(API + '/studio/mapping-save', {
@@ -543,7 +663,7 @@ chrome.runtime.onMessage.addListener(function(msg, sender, sendResponse) {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
               userInput: userInput,
-              mt5Symbol: mt5Symbol,
+              tvSymbol: tvSymbol,
               price: msg.price || null
             }),
             signal: AbortSignal.timeout(2000)
@@ -583,18 +703,32 @@ chrome.runtime.onMessage.addListener(function(msg, sender, sendResponse) {
       // ─── GET AVAILABLE SYMBOLS ────────────────────────────────────
       if (msg.type === 'GET_SYMBOLS') {
         try {
-          const resp = await fetch(API + '/mt5/symbols', {
+          const resp = await fetch(API + '/extension/data', {
             signal: AbortSignal.timeout(3000)
           });
-          
           const data = await resp.json();
-          sendResponse({ ok: data.ok, symbols: data.symbols, error: data.error });
+          const symbols = data.ok && data.currentData?.symbol ? [data.currentData.symbol] : [];
+          sendResponse({ ok: data.ok, symbols, error: data.error });
         } catch (err) {
           sendResponse({ ok: false, error: err.message });
         }
         return;
       }
       
+      // ─── SCAN_TF — déclenché par ANALYSER pour collecter RSI multi-TF ──
+      if (msg.type === 'SCAN_TF') {
+        sendResponse({ ok: true, started: true });
+        scanAllTimeframes().catch(() => {});
+        return;
+      }
+
+      // ─── SET_ARMED — notifie background que le robot est armé/désarmé ──
+      if (msg.type === 'SET_ARMED') {
+        systemState.isArmed = !!msg.armed;
+        sendResponse({ ok: true });
+        return;
+      }
+
       // ─── PING ────────────────────────────────────────────────────
       if (msg.type === 'PING') {
         sendResponse({ ok: true, pong: true });
@@ -629,21 +763,29 @@ chrome.runtime.onMessage.addListener(function(msg, sender, sendResponse) {
 });
 
 // ── TAB MANAGEMENT ────────────────────────────────────────────────────────
-// Clic icône extension : toggle l'overlay iframe dans TradingView si disponible,
-// sinon fallback sur la fenêtre persistante (hors TV).
+// RÈGLE : 1 clic = 1 seule source d'affichage.
+//   1. TradingView actif + overlay OK  → overlay seul (ferme popup si ouvert)
+//   2. TradingView actif + overlay KO  → fenêtre persistante (fallback propre)
+//   3. Hors TradingView               → fenêtre persistante
+//   Mutex _onClickedBusy : double-clic ignoré jusqu'à fin du traitement
 chrome.action.onClicked.addListener(async () => {
+  if (_onClickedBusy) return; // double-clic → ignoré
+  _onClickedBusy = true;
   try {
     const tvTab = await findTradingViewTab();
+
     if (tvTab && typeof tvTab.id === 'number') {
-      // Essai 1: content script en place → TOGGLE_PANEL direct
+      // ── CAS 1 : onglet TradingView trouvé ────────────────────────────────
       let toggled = false;
+
+      // Essai 1 — content script vivant → toggle direct
       try {
         const resp = await chrome.tabs.sendMessage(tvTab.id, { type: 'TOGGLE_PANEL' });
         toggled = !!(resp && resp.ok);
       } catch (_) { toggled = false; }
 
+      // Essai 2 — content script mort → réinjecter + retenter
       if (!toggled) {
-        // Essai 2: réinjecter le content script puis retenter
         await reInjectContentScript(tvTab.id);
         await new Promise(r => setTimeout(r, 500));
         try {
@@ -653,19 +795,25 @@ chrome.action.onClicked.addListener(async () => {
       }
 
       if (toggled) {
-        // Overlay toggled dans TV — fermer la fenêtre persistante si elle est encore ouverte
+        // Overlay activé → fermer la fenêtre persistante si ouverte (évite doublon)
         if (persistentPopupWindowId !== null) {
           try { await chrome.windows.remove(persistentPopupWindowId); } catch (_) {}
           persistentPopupWindowId = null;
         }
-        return;
+        return; // overlay seul → terminé
       }
+
+      // Overlay impossible (contenu TV non disponible) → fallback fenêtre persistante
+      console.log('[BG] Overlay KO — fallback fenêtre persistante');
     }
-    // Fallback : pas sur TV ou injection échouée → fenêtre persistante
+
+    // ── CAS 2 & 3 : ouvrir fenêtre persistante ───────────────────────────
     await openPersistentPopupWindow();
   } catch (err) {
     console.log('[BG] Toggle panel error:', err.message);
     openPersistentPopupWindow().catch(() => {});
+  } finally {
+    _onClickedBusy = false;
   }
 });
 
@@ -780,6 +928,36 @@ async function watchdogReconnect() {
   _watchdogRunning = false;
 }
 
+// ── AUTO SCAN ADAPTATIF — M1/M5/M15/H1 en permanence ────────────────────
+// Logique trader PRO :
+//   PHASE 1 : H1 + M15 → contexte  (scan 15min)
+//   PHASE 2 : M15 + M5 → zone      (scan 5min si approche)
+//   PHASE 3 : M1       → entrée    (scan 60s si dans la zone)
+let _autoScanLastAt = 0;
+
+function _getAutoScanDelayMs() {
+  const snap = systemState.lastSnapshot || {};
+  // En zone (support/résistance/liquidité) → scan M1 chaque minute
+  const inZone = !!(snap.inBot || snap.inTop || snap.zoneLiqHaute || snap.zoneLiqBasse
+                   || snap.bullRej || snap.bearRej);
+  if (inZone) return 60 * 1000;
+  // Approche zone : dominance directionnelle > 50%
+  const approaching = (Number(snap.macroBull || 0) > 50 || Number(snap.macroBear || 0) > 50
+                      || Number(snap.scoreTech3 || snap.scoreTech4 || 0) >= 50);
+  if (approaching) return 5 * 60 * 1000;
+  // Hors zone : re-check H1+M15 toutes les 15min
+  return 15 * 60 * 1000;
+}
+
+function tickAutoScan() {
+  const delay = _getAutoScanDelayMs();
+  if (Date.now() - _autoScanLastAt < delay) return;
+  if (!systemState.activeSymbol || !systemState.activePrice) return;
+  _autoScanLastAt = Date.now();
+  console.log('[ADEL] AUTO SCAN TF — délai', Math.round(delay / 60000) + 'min | symbole:', systemState.activeSymbol);
+  scanAllTimeframes().catch(() => {});
+}
+
 // ── START POLLING ────────────────────────────────────────────────────────
 function startPolling() {
   console.log('[BG] v3.2 polling started');
@@ -794,23 +972,32 @@ function startPolling() {
   setInterval(pollBackendState, POLL_INTERVAL);
   setInterval(scrapAndSendTradingView, SCRAPE_INTERVAL);
 
+  // APEX command poll — via alarm uniquement (évite doublon setInterval + alarm)
+  // Implémenté dans chrome.alarms.onAlarm.addListener sous 'apex-poll'
+
+  // Auto-scan adaptatif — vérifie toutes les 30s si un scan est dû
+  setInterval(tickAutoScan, 30 * 1000);
+  // Premier scan au démarrage après 8s (laisser le scrape initial s'établir)
+  setTimeout(function() {
+    if (systemState.activeSymbol && systemState.activePrice) {
+      console.log('[ADEL] AUTO SCAN INIT — premier scan M1/M5/M15/H1');
+      _autoScanLastAt = Date.now();
+      scanAllTimeframes().catch(() => {});
+    }
+  }, 8000);
+
   // ── ALARMS MV3 — persistent même si le service worker est tué par Chrome ──
-  // setInterval meurt quand Chrome tue le SW après inactivité.
-  // chrome.alarms survit et réveille le SW automatiquement.
-  // ALARM 'scrape-tv': force un scrape TradingView toutes les 1 minute (min Chrome = 1min)
-  chrome.alarms.create('scrape-tv',   { periodInMinutes: 1 });
-  // ALARM 'watchdog':  lance le watchdog toutes les 1 minute
-  chrome.alarms.create('watchdog',    { periodInMinutes: 1 });
-  // ALARM 'poll-backend': fallback si setInterval est mort
-  chrome.alarms.create('poll-backend',{ periodInMinutes: 1 });
+  chrome.alarms.create('scrape-tv',    { periodInMinutes: 1 });
+  chrome.alarms.create('watchdog',     { periodInMinutes: 1 });
+  chrome.alarms.create('poll-backend', { periodInMinutes: 1 });
+  chrome.alarms.create('auto-scan-tf', { periodInMinutes: 1 });
+  chrome.alarms.create('apex-poll',    { periodInMinutes: 1 }); // APEX commandes serveur → extension
 }
 
 // ── ALARM LISTENER — réveille le service worker et exécute les tâches ─────
 chrome.alarms.onAlarm.addListener(function(alarm) {
   if (alarm.name === 'scrape-tv') {
-    // Réinjecter si nécessaire + scraper — garantit que le prix est à jour
     scrapAndSendTradingView().catch(() => {});
-    // Si le scrap n'a rien envoyé depuis 60s+, réinjecter content.js
     const _ageMs = Date.now() - _lastSuccessfulScrap;
     if (_ageMs > 60000) {
       findTradingViewTab().then(tab => {
@@ -824,8 +1011,35 @@ chrome.alarms.onAlarm.addListener(function(alarm) {
   if (alarm.name === 'poll-backend') {
     pollBackendState().catch(() => {});
   }
+  if (alarm.name === 'auto-scan-tf') {
+    tickAutoScan();
+  }
+  if (alarm.name === 'apex-poll') {
+    // Exécute les commandes SWITCH_TF envoyées par le serveur via /apex/commands/next
+    (async () => {
+      try {
+        const r = await fetch(API + '/apex/commands/next', { signal: AbortSignal.timeout(3000) });
+        if (!r.ok) return;
+        let d; try { d = await r.json(); } catch(_) { return; }
+        if (!d || !d.command) return;
+        const cmd = d.command;
+        if (cmd.action === 'SWITCH_TF') {
+          const tabId = systemState.activeTradingViewTabId;
+          if (!tabId) return;
+          try {
+            const result = await chrome.tabs.sendMessage(tabId, { type: 'SWITCH_TF', tf: cmd.tf });
+            await fetch(API + '/apex/result', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ action: 'SWITCH_TF', tf: cmd.tf, result, symbol: systemState.activeSymbol })
+            }).catch(() => {});
+          } catch(_) {}
+        }
+      } catch(_) {}
+    })();
+  }
 });
 
 // ── INIT ──────────────────────────────────────────────────────────────────
-console.log('[BG] v3.2 init — Complete MT5 Architecture + Alarms');
+console.log('[BG] v3.2 init — Bridge TV Architecture + Alarms');
 hydratePersistentState().finally(startPolling);

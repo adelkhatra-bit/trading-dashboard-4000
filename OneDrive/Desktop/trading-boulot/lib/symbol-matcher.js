@@ -165,7 +165,7 @@ function findCanonicalSymbol(input) {
 /**
  * Check if price is within acceptable tolerance for a symbol
  * @param {number} tvPrice - Price from TradingView
- * @param {number} backendPrice - Price from backend (MT5/Yahoo)
+ * @param {number} backendPrice - Price from backend (TradingView bridge)
  * @param {string} canonical - Canonical symbol
  * @returns {object} { ok: bool, tolerance: num, difference: num, status: string }
  */
@@ -175,7 +175,7 @@ function checkPriceTolerance(tvPrice, backendPrice, canonical) {
   }
 
   const config = SYMBOL_VARIANTS[canonical];
-  const tolerance = config.sources[0].tolerance;  // Use MT5 tolerance (primary)
+  const tolerance = config.sources[0].tolerance;  // Use configured tolerance
   
   const diff = Math.abs(tvPrice - backendPrice);
   const pctDiff = (diff / tvPrice) * 100;
@@ -274,8 +274,7 @@ function matchSymbolWithPriceValidation(tvSymbol, tvPrice, backendData) {
     selectedSource: selection.source,
     selectedPrice: selection.price,
     priceValidation,
-    syncStatus: selection.source === 'mt5' && priceValidation.mt5?.valid ? 'SYNCHRONIZED' : 
-                selection.source === 'tradingview' ? 'ALIGNED' : 'APPROXIMATED',
+    syncStatus: selection.source === 'tradingview' ? 'ALIGNED' : 'APPROXIMATED',
     recommendation: Object.values(priceValidation).some(v => v.valid) ? 'PROCEED' : 'VERIFY',
     timestamp: new Date().toISOString()
   };
