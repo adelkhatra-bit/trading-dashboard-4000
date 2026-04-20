@@ -322,7 +322,8 @@ function requireAdelSpecKey(req, res, next) {
 //                  /health, /ping, /stream (lecture seule)
 const ADEL_WRITE_EXEMPT = new Set([
   '/tv-bridge', '/tradingview/live', '/tv-webhook', '/webhook', '/bridge/robot-v12',
-  '/health', '/ping', '/stream', '/extension/sync'
+  '/health', '/ping', '/stream', '/extension/sync',
+  '/system/log'  // logs dashboard — aucune clé requise, lecture seule côté risque
 ]);
 
 app.use(function globalAdelWriteLock(req, res, next) {
@@ -1198,9 +1199,14 @@ function resolveActiveRuntimeContext() {
   const selectedTvEntry = selectedTvKey ? tvDataStore[selectedTvKey] : null;
   const selectedTvPrice = Number(selectedTvEntry?.price ?? selectedTvEntry?.bid ?? NaN);
   const selectedTvTf = String(selectedTvEntry?.robotV12?.timeframe || selectedTvEntry?.timeframe || '').toUpperCase() || null;
-  const selectedTvTs = selectedTvEntry?.robotV12?.receivedAt || selectedTvEntry?.timestamp || null;
+  // updatedAt peut être ms (keepalive) ou ISO string (webhook TV)
+  const _selUpdRaw = selectedTvEntry?.updatedAt;
+  const _selUpdIso = _selUpdRaw
+    ? (typeof _selUpdRaw === 'number' ? new Date(_selUpdRaw).toISOString() : _selUpdRaw)
+    : null;
+  const selectedTvTs = selectedTvEntry?.robotV12?.receivedAt || selectedTvEntry?.timestamp || _selUpdIso || null;
   const selectedUpdatedAt = activeSymbol?.updatedAt || null;
-  const selectedTvTsMs = selectedTvTs ? Date.parse(selectedTvTs) : NaN;
+  const selectedTvTsMs = selectedTvTs ? (typeof selectedTvTs === 'number' ? selectedTvTs : Date.parse(selectedTvTs)) : NaN;
   const selectedUpdatedMs = selectedUpdatedAt ? Date.parse(selectedUpdatedAt) : NaN;
   const selectedTvIsFresh = Number.isFinite(selectedTvTsMs)
     && (!Number.isFinite(selectedUpdatedMs) || selectedTvTsMs >= (selectedUpdatedMs - 2000));
@@ -1976,8 +1982,13 @@ app.get('/extension/sync', (_req, res) => {
         resolvedBy: resolvedCtx.active.resolvedBy || 'none',
         tvSymbol: _getWidgetSymbol(null, _sym),
         tvResolution: _tfToTvResolution(_tf),
+        // Keepalive: si pas d'updatedAt réel, utiliser Date.now() pour éviter STALE au boot
+        updatedAt: resolvedCtx.active.updatedAt || (_bridgeKeepaliveEnabled && _bridgeLiveAt ? new Date().toISOString() : null),
       };
     })(),
+    systemStatus: _bridgeKeepaliveEnabled && _bridgeLiveAt
+      ? { source: 'keepalive', fluxStatus: 'LIVE' }
+      : (marketStore.systemStatus || { source: 'offline', fluxStatus: 'OFFLINE' }),
     bridgeConfig,
     agentStates: agentStates,
     sourceContexts: resolvedCtx,
@@ -2719,6 +2730,9 @@ BRIDGE_GATE_EXEMPT.add('/apex/commands/next');
 BRIDGE_GATE_EXEMPT.add('/apex/result');
 BRIDGE_GATE_EXEMPT.add('/api/github-agent/analyse');
 BRIDGE_GATE_EXEMPT.add('/api/sync-check');
+BRIDGE_GATE_EXEMPT.add('/system/log');
+BRIDGE_GATE_EXEMPT.add('/system/log/stream');
+BRIDGE_GATE_EXEMPT.add('/system/log/recent');
 
 // ─── SYNC-CHECK — vérité unique pour dashboard + extension ───────────────────
 // Les deux interfaces appellent cet endpoint pour garantir la cohérence

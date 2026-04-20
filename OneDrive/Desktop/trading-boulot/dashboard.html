@@ -1113,7 +1113,7 @@ function systemLog(entry) {
   try {
     fetch('/system/log', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', 'X-Adel-Key': 'Adel' },
       body: JSON.stringify({ source: 'dashboard', ...entry })
     }).catch(() => {});
   } catch (_) {}

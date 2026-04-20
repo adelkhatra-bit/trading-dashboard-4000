@@ -71,7 +71,14 @@ const ChartModule = {
       
       const data = await resp.json();
       const sourceRates = Array.isArray(data?.candles) ? data.candles : [];
-      if (!data.ok || sourceRates.length === 0) throw new Error(data.error || 'No chart data');
+      if (!data.ok) throw new Error(data.error || 'klines error');
+      if (sourceRates.length === 0) {
+        // Pas d'historique OHLCV — TradingView n'a pas encore envoyé de ticks
+        // Afficher un message silencieux sans crasher
+        this.showError('Graphique indisponible — Ouvrir TradingView pour alimenter le bridge');
+        console.info('[CHART] Aucune donnée klines — bridge en attente de ticks Pine Script');
+        return;
+      }
       
       const rates = sourceRates.map((k) => ({
         time: typeof k.time === 'string'
