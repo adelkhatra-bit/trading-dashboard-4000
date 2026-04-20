@@ -12964,7 +12964,7 @@ async function boot() {
   setInterval(loadLiveSymbols,    30000);
   setInterval(loadJournalStats,   90000);
   setInterval(refreshServerStats, 60000);
-  setInterval(renderBridgeHealth,  15000);
+  setInterval(renderBridgeHealth,  5000);
   refreshServerStats();
   setInterval(function() {
     if (!state.agentSessionActive) return;

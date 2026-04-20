@@ -999,8 +999,9 @@ function _strictCtx() {
   if (!isFinite(ageMs) || ageMs > STRICT_MAX_BRIDGE_AGE_MS) return { ok: false, reason: 'STALE', ageMs };
   const srvSym = _normSym(S.serverSymbol);
   const srvTf  = _normTf(S.serverTf);
-  if (srvSym && srvSym !== sym) return { ok: false, reason: 'DESYNC_SYMBOL', detail: { bridge: sym, server: srvSym } };
-  if (srvTf && srvTf !== tf) return { ok: false, reason: 'DESYNC_TIMEFRAME', detail: { bridge: tf, server: srvTf } };
+  // Auto-sync: si désync, accepter le serveur comme vérité (évite blocage permanent au démarrage)
+  if (srvSym && srvSym !== sym) { S.symbol = srvSym; if (typeof setText === 'function') setText('statusSymbol', srvSym); }
+  if (srvTf && srvTf !== tf)   { S.tf = srvTf;     if (typeof setText === 'function') setText('statusTf', srvTf); }
   return { ok: true, sym, tf, ageMs };
 }
 

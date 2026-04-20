@@ -40,8 +40,8 @@ function shouldPostLive(symbol, price, timeframe) {
 }
 
 const API = 'http://127.0.0.1:4000';  // TRADING AUTO EXCLUSIVE
-const POLL_INTERVAL = 4000;  // 4s suffit — réduit TIME_WAIT storm (était 1500)
-const SCRAPE_INTERVAL = 2000; // 2s suffit pour prix live — réduit charge CPU (était 1000)
+const POLL_INTERVAL = 1500;  // Poll resserré pour limiter le drift backend/extension
+const SCRAPE_INTERVAL = 1000; // Scrape TradingView DOM en quasi temps-réel
 const FOREGROUND_ENFORCE_MS = 1200;
 const STORAGE_KEY_BG_STATE = 'taa_bg_system_state_v1';
 

@@ -5256,7 +5256,8 @@ function handleTvWebhook(req, res) {
     // Never fall back to activeSymbol.timeframe — that belongs to a potentially different symbol.
     const resolvedTf = String(data.timeframe || data.tf || 'H1').toUpperCase();
     // tvSymbol + tvResolution pour le widget TradingView (chart)
-    const tvSymbolForWidget = _getWidgetSymbol(data.tickerid || data.ticker, canonical);
+    // canonical est déclaré plus bas (ligne ~5390) — utiliser symbol ici pour éviter TDZ crash
+    const tvSymbolForWidget = _getWidgetSymbol(data.tickerid || data.ticker, symbol);
     const tvResolutionForWidget = data.tvResolution || data.resolution || _tfToTvResolution(resolvedTf);
     const action = data.action != null
       ? String(data.action)
@@ -5731,7 +5732,7 @@ function handleTvWebhook(req, res) {
       // LIA/Lea appelle Ollama avec bridge complet. Throttlé pour ne pas surcharger.
       // Décision différente à chaque tick grâce aux prix et zones réelles du bridge.
       const _leaNow = Date.now();
-      if (!_tvLeaLastCall) global._tvLeaLastCall = {};
+      if (!global._tvLeaLastCall) global._tvLeaLastCall = {};
       if (!global._tvLeaLastCall[canonical] || (_leaNow - global._tvLeaLastCall[canonical]) > 30000) {
         global._tvLeaLastCall[canonical] = _leaNow;
         // Asynchrone — ne bloque pas le tick bridge
