@@ -48,9 +48,13 @@ function Stop-AutoAgents {
 }
 
 function Start-Server {
+    # Source unique : trading-boulot/server.js — tuer tout node avant de démarrer
+    Get-Process node -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+    Start-Sleep -Seconds 1
     $projectDir = "C:\Users\97156\OneDrive\Desktop\trading-boulot"
     Start-Process powershell -WorkingDirectory $projectDir -ArgumentList "-NoExit","-Command","node server.js"
     Start-Sleep -Seconds 3
+    Write-Host "SOURCE UNIQUE: trading-boulot/server.js demarré sur port 4000" -ForegroundColor Cyan
 }
 
 function Start-Tunnel {
@@ -88,7 +92,7 @@ switch ($action) {
         Stop-AllNode
         Get-Process cloudflared -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
         Start-Sleep -Seconds 2
-        Write-Host "BOULOT SERVER STOPPED" -ForegroundColor Yellow
+        Write-Host "TRADING ANALYZER SERVER STOPPED" -ForegroundColor Yellow
     }
     "start" {
         Stop-Port4000
@@ -116,10 +120,10 @@ switch ($action) {
     "status" {
         $busy = Get-NetTCPConnection -LocalPort $port -ErrorAction SilentlyContinue
         if ($busy) {
-            Write-Host "PORT 4000 ACTIVE (boulot server running)" -ForegroundColor Green
+            Write-Host "PORT 4000 ACTIVE (Trading Analyzer server running)" -ForegroundColor Green
             $busy | Format-Table -AutoSize
         } else {
-            Write-Host "PORT 4000 FREE / BOULOT SERVER OFFLINE" -ForegroundColor Red
+            Write-Host "PORT 4000 FREE / TRADING ANALYZER SERVER OFFLINE" -ForegroundColor Red
         }
         $cf = Get-Process cloudflared -ErrorAction SilentlyContinue
         if ($cf) {

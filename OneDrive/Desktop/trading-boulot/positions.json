@@ -1,0 +1,12 @@
+[
+  {
+    "symbol": "XAUUSD",
+    "direction": "WAIT",
+    "entry": null,
+    "sl": null,
+    "tp": null,
+    "timeframe": "H1",
+    "note": "En attente de setup — pas de position active",
+    "updatedAt": "2026-04-20T00:00:00.000Z"
+  }
+]

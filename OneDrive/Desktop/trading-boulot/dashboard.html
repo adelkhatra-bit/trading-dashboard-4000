@@ -253,6 +253,8 @@
     <span class="status-sep">|</span>
     <span id="statusSource" style="color:var(--muted);font-size:11px">TradingView</span>
     <span class="status-sep">|</span>
+    <span id="_tvModeBadge" style="font-size:10px;font-weight:700;color:#64748b" title="Mode bridge TV">🟡 TV CACHE</span>
+    <span class="status-sep">|</span>
     <span id="statusTime">--</span>
     <span class="status-sep">|</span>
     <span id="srcBadge" style="font-size:10px;color:var(--muted);font-weight:600">--</span>
@@ -906,7 +908,7 @@
 // Pas de MT5. Pas de données simulées. Prix réels uniquement.
 // ═══════════════════════════════════════════════════════════════════════
 
-const STRICT_MAX_BRIDGE_AGE_MS = 30000; // 30s — au-delà: stale -> blocage strict
+const STRICT_MAX_BRIDGE_AGE_MS = 90000; // 90s — keepalive 20s, marge 4x
 
 const S = {
   symbol: null,
@@ -1106,6 +1108,25 @@ function _applyStrictUI() {
 function setText(id, txt) {
   const e = el(id);
   if (e && e.textContent !== String(txt == null ? '' : txt)) e.textContent = txt;
+}
+
+// ── TV MODE BADGE — LIVE_TV / CACHE_TV / OFFLINE ─────────────────────────
+function _updateTvModeBadge(mode) {
+  const el_tvMode = document.getElementById('_tvModeBadge');
+  if (!el_tvMode) return;
+  if (mode === 'LIVE_TV') {
+    el_tvMode.textContent = '🟢 TV LIVE';
+    el_tvMode.style.color = '#22c55e';
+    el_tvMode.title = 'Données TradingView temps réel — flux Pine Script actif';
+  } else if (mode === 'CACHE_TV') {
+    el_tvMode.textContent = '🟡 TV CACHE';
+    el_tvMode.style.color = '#eab308';
+    el_tvMode.title = 'Dernier prix TV connu (keepalive) — Ouvrir TradingView pour flux live';
+  } else {
+    el_tvMode.textContent = '🔴 TV OFF';
+    el_tvMode.style.color = '#ef4444';
+    el_tvMode.title = 'Aucune donnée TradingView';
+  }
 }
 
 // ── GLOBAL LOG — dashboard envoie tous ses événements au bus serveur ──────
@@ -1601,6 +1622,14 @@ function handleSSE(msg) {
     const p = Number(msg.price);
     if (p > 0) {
       const _u = msg.updatedAt || null;
+      // Stocker le mode bridge (LIVE_TV / CACHE_TV / OFFLINE)
+      if (msg.tvMode) { S.tvMode = msg.tvMode; S.requiresTradingView = msg.requiresTradingView !== false; }
+      else if (msg.source === 'tradingview-webhook' || msg.source === 'tradingview-live') {
+        S.tvMode = 'LIVE_TV'; S.requiresTradingView = false;
+      } else if (msg.source === 'keepalive-cache') {
+        S.tvMode = S.tvMode || 'CACHE_TV'; S.requiresTradingView = true;
+      }
+      _updateTvModeBadge(S.tvMode);
       updateStatusBar(msg.symbol, msg.timeframe, p, 'TradingView', _u, !!_u);
       // TradingView widget: bridge doit fournir ces champs (aucun mapping local)
       const _tvSymC = _nStr(msg.tvSymbol || msg.tradingviewSymbol || msg.tradingViewSymbol || msg.tv_symbol || msg.symbolTV || msg.tvTicker);
@@ -4202,9 +4231,18 @@ async function runAutoAnalysis() {
     }
 
     // ENTRER button — AGENT ADEL STRICT décide (pas IA seule ni hiérarchie seule)
-    // canEnter = agent complet ET canEnter=true ET pas de conflit (règle NON MODIFIABLE)
-    const canEnter = _agentCanEnter && (_hierarchyCanEnter || !_hierarchyOk);
+    // canEnter = agent complet ET canEnter=true ET pas de conflit ET LIVE_TV (règle NON MODIFIABLE)
+    const _isLiveTv = S.tvMode === 'LIVE_TV';
+    const canEnter = _agentCanEnter && (_hierarchyCanEnter || !_hierarchyOk) && _isLiveTv;
     S.analysisReady = canEnter;
+
+    // Avertissement CACHE_TV quand armé — analyse autorisée, entrée bloquée
+    if (S.armed && !_isLiveTv && coachOut) {
+      const _tvWarn = '\n\n⚠️ MODE ' + (S.tvMode || 'CACHE') + ' — TradingView requis pour entrée\nOuvrir TradingView + Pine Script actif pour autoriser ENTRER.';
+      if (!coachOut.textContent.includes('TradingView requis pour entrée')) {
+        coachOut.textContent += _tvWarn;
+      }
+    }
 
     // ── PRÉ-VALIDATION LATENCE: stocker le setup validé pour fast-path au prochain tick ──
     if (canEnter && (isLong || isShort) && S.armed && !_analyseConflict) {
@@ -4217,6 +4255,7 @@ async function runAutoAnalysis() {
       btnE.disabled = !canEnter;
       btnE.title = canEnter
         ? 'Entrée validée — hiérarchie ' + _scanMode + ' confirmée'
+        : !_isLiveTv ? 'TradingView LIVE requis — ouvrir TradingView + Pine Script'
         : 'Attends la confirmation — ' + (_ctxDir ? 'contexte ' + _ctxDir + ', validation manquante' : 'contexte non aligné');
     }
 
@@ -5164,18 +5203,28 @@ window.addEventListener('load', async () => {
       const _sym = d.symbol || '—';
       const _px  = d.price ? d.price.toFixed(d.symbol&&d.symbol.includes('JPY')?3:2) : '—';
       const _age = d.ageLabel || '—';
-      const _src = d.source === 'keepalive-cache' ? 'KA' : 'TV';
+      const _mode = d.tvMode || (d.source === 'keepalive-cache' ? 'CACHE_TV' : 'LIVE_TV');
+
+      // Mettre à jour S.bridgeUpdatedAtMs depuis sync-check (filet de sécurité si SSE lent)
+      if (typeof S !== 'undefined' && d.connected && d.ageMs != null) {
+        S.bridgeUpdatedAtMs = Date.now() - d.ageMs;
+        if (!S.tvMode || _mode !== 'OFFLINE') { S.tvMode = _mode; S.requiresTradingView = !!d.requiresTradingView; }
+        if (typeof _updateTvModeBadge === 'function') _updateTvModeBadge(_mode);
+        if (typeof _applyStrictUI === 'function') _applyStrictUI();
+      }
+
       if (_syncBadge) {
-        _syncBadge.textContent = _sym + ' ' + _px + ' [' + _src + ' ' + _age + ']';
-        _syncBadge.style.background = d.connected ? 'rgba(34,197,94,0.2)' : 'rgba(239,68,68,0.2)';
-        _syncBadge.style.color = d.connected ? '#4ade80' : '#ef4444';
+        const _modeLabel = _mode === 'LIVE_TV' ? 'LIVE' : _mode === 'CACHE_TV' ? 'CACHE' : 'OFF';
+        _syncBadge.textContent = _sym + ' ' + _px + ' [' + _modeLabel + ' ' + _age + ']';
+        _syncBadge.style.background = _mode === 'LIVE_TV' ? 'rgba(34,197,94,0.2)' : _mode === 'CACHE_TV' ? 'rgba(234,179,8,0.2)' : 'rgba(239,68,68,0.2)';
+        _syncBadge.style.color = _mode === 'LIVE_TV' ? '#4ade80' : _mode === 'CACHE_TV' ? '#facc15' : '#ef4444';
       }
       if (_bridgeBadge) {
         _bridgeBadge.textContent = d.bridgeLive ? '⬤ BRIDGE' : '○ BRIDGE OFF';
         _bridgeBadge.style.background = d.bridgeLive ? 'rgba(34,197,94,0.15)' : 'rgba(239,68,68,0.15)';
         _bridgeBadge.style.color = d.bridgeLive ? '#22c55e' : '#ef4444';
       }
-      _addLog('sync', 'SYNC', _sym + ' @ ' + _px + ' | Bridge:' + (d.bridgeLive?'ON':'OFF') + ' | Ext:' + d.extensionClients + ' clients');
+      _addLog('sync', 'SYNC', _sym + ' @ ' + _px + ' | ' + _mode + ' | ' + _age + ' | Bridge:' + (d.bridgeLive?'ON':'OFF') + ' | Ext:' + d.extensionClients);
     } catch(e) {
       if (_bridgeBadge) { _bridgeBadge.textContent = '○ SERVEUR OFF'; _bridgeBadge.style.color='#ef4444'; }
       _addLog('error', 'SYNC', 'sync-check erreur: ' + e.message);

@@ -346,8 +346,30 @@ app.use(function globalAdelWriteLock(req, res, next) {
 // IMPORTANT: tracker EN MÉMOIRE uniquement (jamais depuis disk cache).
 // _bridgeLiveAt = null au démarrage → BLOQUÉ jusqu'au premier payload Pine live.
 // Le disk cache tvDataStore peut être "vieux" de plusieurs heures → interdit pour le gate.
-let _bridgeLiveAt = null; // mis à jour par signalBridgeLive() à chaque payload Pine
+let _bridgeLiveAt = null;     // mis à jour par signalBridgeLive() à chaque payload Pine
+let _lastRealTvTickAt = null; // UNIQUEMENT mis à jour quand un vrai tick Pine arrive (pas keepalive)
+const REAL_TV_STALE_MS = 90000; // 90s sans vrai tick → TV non connecté
+
 function signalBridgeLive() { _bridgeLiveAt = Date.now(); }
+
+// Appelé UNIQUEMENT dans handleTvWebhook (vrai payload Pine Script ou extension)
+function signalRealTvTick() {
+  const _wasCache = !_lastRealTvTickAt || (Date.now() - _lastRealTvTickAt) >= REAL_TV_STALE_MS;
+  _lastRealTvTickAt = Date.now();
+  _bridgeLiveAt = Date.now();
+  if (_wasCache) console.log('[BRIDGE] Mode → LIVE_TV (vrai tick Pine reçu)');
+}
+
+// Retourne le mode bridge actuel :
+// 'LIVE_TV'  — vrai tick Pine < 90s   → données temps réel fiables
+// 'CACHE_TV' — keepalive actif, pas de tick TV récent → prix connu mais pas live
+// 'OFFLINE'  — aucun keepalive ni tick → serveur sans données
+function getBridgeMode() {
+  const now = Date.now();
+  if (_lastRealTvTickAt && (now - _lastRealTvTickAt) < REAL_TV_STALE_MS) return 'LIVE_TV';
+  if (_bridgeLiveAt && (now - _bridgeLiveAt) < BRIDGE_STALE_MS) return 'CACHE_TV';
+  return 'OFFLINE';
+}
 
 // ── BRIDGE KEEPALIVE — maintient le bridge actif en l'absence de payload Pine ──
 // Démarre automatiquement au boot. Peut être désactivé si TV envoie des données.
@@ -442,9 +464,13 @@ app.post('/debug/bridge-online', (req, res) => {
 
 // ── /api/bridge/keepalive — statut + contrôle keepalive ──────────────────────
 app.get('/api/bridge/keepalive', (_req, res) => {
+  const _km = getBridgeMode();
   res.json({ ok: true, keepaliveEnabled: _bridgeKeepaliveEnabled,
     bridgeLive: !!(_bridgeLiveAt && (Date.now() - _bridgeLiveAt) < BRIDGE_STALE_MS),
-    bridgeAgeMs: _bridgeLiveAt ? Date.now() - _bridgeLiveAt : null });
+    bridgeAgeMs: _bridgeLiveAt ? Date.now() - _bridgeLiveAt : null,
+    tvMode: _km,
+    realTvAgeMs: _lastRealTvTickAt ? Date.now() - _lastRealTvTickAt : null,
+    requiresTradingView: _km !== 'LIVE_TV' });
 });
 app.post('/api/bridge/keepalive', (req, res) => {
   const { enable } = req.body || {};
@@ -461,6 +487,8 @@ app.post('/api/bridge/keepalive', (req, res) => {
 // ─── DEV HELPER — injecte le bouton contexte dans chaque page HTML ────────────
 const DEV_HELPER_TAG = '\n<script src="/public/dev-helper.js"></script>\n</body>';
 function sendHTMLWithHelper(res, filePath) {
+  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate');
+  res.setHeader('Pragma', 'no-cache');
   const raw = fs.readFileSync(filePath, 'utf8');
   const html = raw.includes('dev-helper.js') ? raw : raw.replace('</body>', DEV_HELPER_TAG);
   res.type('html').send(html);
@@ -1204,9 +1232,16 @@ function resolveActiveRuntimeContext() {
   const _selUpdIso = _selUpdRaw
     ? (typeof _selUpdRaw === 'number' ? new Date(_selUpdRaw).toISOString() : _selUpdRaw)
     : null;
-  const selectedTvTs = selectedTvEntry?.robotV12?.receivedAt || selectedTvEntry?.timestamp || _selUpdIso || null;
+  // Priorité keepalive updatedAt (fraîche) sur timestamp webhook Pine (peut être vieux de plusieurs heures)
+  const _selUpdMs = _selUpdRaw ? (typeof _selUpdRaw === 'number' ? _selUpdRaw : Date.parse(_selUpdRaw)) : NaN;
+  const _selWHMs  = selectedTvEntry?.robotV12?.receivedAt
+    ? (typeof selectedTvEntry.robotV12.receivedAt === 'number' ? selectedTvEntry.robotV12.receivedAt : Date.parse(selectedTvEntry.robotV12.receivedAt))
+    : (selectedTvEntry?.timestamp ? Date.parse(selectedTvEntry.timestamp) : NaN);
+  // Prendre la plus récente des deux (keepalive peut être plus récent que le dernier ping Pine)
+  const _bestTsMs = (!Number.isFinite(_selWHMs) || (Number.isFinite(_selUpdMs) && _selUpdMs > _selWHMs)) ? _selUpdMs : _selWHMs;
+  const selectedTvTs = Number.isFinite(_bestTsMs) ? new Date(_bestTsMs).toISOString() : (_selUpdIso || selectedTvEntry?.timestamp || null);
   const selectedUpdatedAt = activeSymbol?.updatedAt || null;
-  const selectedTvTsMs = selectedTvTs ? (typeof selectedTvTs === 'number' ? selectedTvTs : Date.parse(selectedTvTs)) : NaN;
+  const selectedTvTsMs = _bestTsMs;
   const selectedUpdatedMs = selectedUpdatedAt ? Date.parse(selectedUpdatedAt) : NaN;
   const selectedTvIsFresh = Number.isFinite(selectedTvTsMs)
     && (!Number.isFinite(selectedUpdatedMs) || selectedTvTsMs >= (selectedUpdatedMs - 2000));
@@ -1354,7 +1389,11 @@ app.get('/live/state', (_req, res) => {
         mode: bridgeConfig.bridgeMode || 'AUTO',
         source: bridgeConfig.bridgeSource || 'tradingview',
         updatedAt: bridgeConfig.updatedAt || null,
-        updatedBy: bridgeConfig.updatedBy || null
+        updatedBy: bridgeConfig.updatedBy || null,
+        tvConnected: getBridgeMode() !== 'OFFLINE',
+        tvMode: getBridgeMode(),
+        bridgeLive: !!(_bridgeLiveAt && (Date.now() - _bridgeLiveAt) < BRIDGE_STALE_MS),
+        bridgeAgeMs: _bridgeLiveAt ? Date.now() - _bridgeLiveAt : null
       },
       streams: {
         marketSseClients: Array.isArray(marketStore.sseClients) ? marketStore.sseClients.length : 0,
@@ -1728,6 +1767,7 @@ app.post('/tv-bridge', async (req, res) => {
       });
     }
 
+    signalRealTvTick(); // VRAI TICK TV via extension DOM scraping
     marketStore.systemStatus = { source: 'tradingview', fluxStatus: 'LIVE', lastUpdate: new Date().toISOString() };
     marketStore.updateFromTV({ symbol: canonical, price: numPrice, timeframe: tf, source: 'tv-bridge' }, canonical);
     marketStore.broadcast({ type: 'tv-raw', symbol: canonical, price: numPrice, timeframe: tf, source: 'tradingview' });
@@ -2178,6 +2218,9 @@ app.get('/extension/data', (_req, res) => {
       indicators: { rsi: _rsi, ma20: null, macd: null },
       updatedAt: _ts || null
     },
+    tvMode: getBridgeMode(),
+    bridgeLive: !!(_bridgeLiveAt && (Date.now() - _bridgeLiveAt) < BRIDGE_STALE_MS),
+    requiresTradingView: getBridgeMode() !== 'LIVE_TV',
     message: _src === 'keepalive-cache'
       ? 'Keepalive cache — dernier prix TV connu'
       : 'Current state TradingView live — aucune autre source'
@@ -2764,6 +2807,8 @@ app.get('/api/sync-check', (_req, res) => {
   }
 
   const livePrice = sym ? getLivePrice(sym, 300000) : null;
+  const _tvMode = getBridgeMode();
+  const _realTvAgeMs = _lastRealTvTickAt ? (Date.now() - _lastRealTvTickAt) : null;
   res.json({
     ok: true,
     timestamp: new Date().toISOString(),
@@ -2778,7 +2823,12 @@ app.get('/api/sync-check', (_req, res) => {
     bridgeKeepalive: !!_bridgeKeepaliveEnabled,
     githubAgentActive: !!_githubAgentActive,
     serverUptime: Math.floor(process.uptime()),
-    extensionClients: Array.isArray(extensionSyncClients) ? extensionSyncClients.length : 0
+    extensionClients: Array.isArray(extensionSyncClients) ? extensionSyncClients.length : 0,
+    // Nouveau : mode TV clair
+    tvMode: _tvMode,                             // 'LIVE_TV' | 'CACHE_TV' | 'OFFLINE'
+    realTvAgeMs: _realTvAgeMs,                   // ms depuis dernier vrai tick Pine
+    realTvAgeLabel: _realTvAgeMs != null ? (Math.round(_realTvAgeMs/1000)+'s') : null,
+    requiresTradingView: _tvMode !== 'LIVE_TV'   // true = ouvrir TV pour données temps réel
   });
 });
 
@@ -2809,6 +2859,7 @@ function apexQueueSwitchTF(tf) {
 app.get('/api/github-agent/analyse', async (req, res) => {
   const symbol = (req.query.symbol || '').toUpperCase() || Object.keys(tvDataStore)[0];
   if (!symbol) return res.status(400).json({ ok: false, error: 'symbol requis' });
+  console.log(`[GITHUB-AGENT] Analyse demandée — symbol=${symbol} tvMode=${getBridgeMode()} ghUrl=${_githubPositionsUrl ? 'configurée' : 'NON_CONFIGURÉE'}`);
 
   // Prix réel depuis bridge
   const tvEnt = tvDataStore[symbol]
@@ -5526,7 +5577,7 @@ function handleTvWebhook(req, res) {
 
     tvDataStore[symbol] = tvStoreEntry;
     if (canonical && canonical !== symbol) tvDataStore[canonical] = tvStoreEntry;
-    signalBridgeLive(); // BRIDGE GATE — payload Pine reçu → système passe READY
+    signalRealTvTick(); // VRAI TICK TV — Pine Script / extension (pas keepalive)
     const bridgeEnabled = bridgeConfig.bridgeEnabled !== false;
     if (bridgeEnabled) {
       marketStore.systemStatus = { source: 'tradingview', fluxStatus: 'LIVE', lastUpdate: new Date().toISOString() };
@@ -5601,7 +5652,9 @@ function handleTvWebhook(req, res) {
         })(),
         tvSymbol: tvSymbolForWidget,
         tvResolution: tvResolutionForWidget,
-        timestamp
+        timestamp,
+        tvMode: 'LIVE_TV',    // toujours LIVE_TV ici — c'est un vrai webhook Pine
+        realTvAgeMs: 0        // vient d'arriver
       }); // end broadcastToExtension
 
       // ── BRIDGE AGENT AUTO — tourne sur chaque tick, pas de clic ANALYSER requis ──

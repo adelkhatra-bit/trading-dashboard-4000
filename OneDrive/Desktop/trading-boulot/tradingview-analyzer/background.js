@@ -423,6 +423,9 @@ async function pollBackendState() {
         systemState.activePrice = current.price || active.price || systemState.activePrice;
         systemState.lastSnapshot = current;
         systemState.lastUpdate = new Date().toISOString();
+        // Synchroniser tvMode depuis serveur — source de vérité
+        if (extData.tvMode) systemState.tvMode = extData.tvMode;
+        systemState.tvConnected = extData.bridgeLive === true;
         persistBackgroundState();
       }
     }

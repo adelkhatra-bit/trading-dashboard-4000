@@ -6697,10 +6697,10 @@ async function refreshAll() {
     return;
   }
 
-  // SÉCURITÉ BRIDGE — désarmer si bridge stale > 30s et pas de position active
-  // refreshAll est appelé toutes les 2-3s — ce guard couvre le cas watchdog non actif
+  // SÉCURITÉ BRIDGE — désarmer si bridge stale > 90s et pas de position active
+  // 90s = marge 4x keepalive — aligné avec STRICT_MAX_BRIDGE_AGE_MS dashboard
   var _raBridgeAgeMs = state._lastBridgeDataAt ? (Date.now() - state._lastBridgeDataAt) : Infinity;
-  if (_raBridgeAgeMs > 30000 && state.armed && !(state.tradeState && state.tradeState.entered)) {
+  if (_raBridgeAgeMs > 90000 && state.armed && !(state.tradeState && state.tradeState.entered)) {
     if (typeof disarmRobot === 'function') {
       disarmRobot('Bridge TV coupé — désarmement sécurité (refreshAll).');
     }
@@ -8028,10 +8028,10 @@ function startEntryWatchdog() {
     // Arrêter seulement si position entrée — jamais timeout tant qu'armé
     if (state.tradeState && state.tradeState.entered) { stopEntryWatchdog(); return; }
 
-    // ── SÉCURITÉ BRIDGE — bridge > 30s sans données → désarmer immédiatement ──
-    // Sans source de vérité live, toute direction/zone est stale → interdit de surveiller
+    // ── SÉCURITÉ BRIDGE — bridge > 90s sans données → désarmer immédiatement ──
+    // 90s = marge 4x keepalive (20s) — aligné avec STRICT_MAX_BRIDGE_AGE_MS dashboard
     var _wdBridgeAgeMs = state._lastBridgeDataAt ? (Date.now() - state._lastBridgeDataAt) : Infinity;
-    if (_wdBridgeAgeMs > 30000) {
+    if (_wdBridgeAgeMs > 90000) {
       var _wdBridgeAgeSec = Math.round(_wdBridgeAgeMs / 1000);
       console.warn('[ADEL] WATCHDOG — bridge offline depuis', _wdBridgeAgeSec, 's → désarmement automatique');
       setCoachText(
@@ -11300,6 +11300,9 @@ function handleSync(msg) {
       if (_newPx !== null) {
         state._lastPriceTick = Date.now();
         state.price = _newPx;
+        // Tout tick prix = bridge vivant — keepalive ou live (évite désarmement watchdog à 30s)
+        state._lastBridgeDataAt = Date.now();
+        if (msg.tvMode) state.tvMode = msg.tvMode;
         updateHeader();
         // Historique des 10 derniers prix — utilisé par analyzeMarketContext (compression/impulsion)
         if (!state._priceHistory) state._priceHistory = [];
